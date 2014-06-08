@@ -22,3 +22,4 @@
 *.x86_64
 *.hex
 psafe
+cov-int/
