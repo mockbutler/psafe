@@ -9,16 +9,15 @@
 
 #include <assert.h>
 #include <err.h>
-#include <gcrypt.h>
-#include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 #include <wchar.h>
+
+#include "psafe.h"
 
 struct psafe_secure {
 	uint8_t p[32];
@@ -42,6 +41,17 @@ void freadn(void *buf, size_t n, FILE *f)
 	}
 }
 
+uint32_t xlu32(void *buf)
+{
+	uint8_t *b = buf;
+	return b[0] | b[1] << 8 | b[2] << 16 | b[3] << 24;
+}
+
+size_t pad_to_block(size_t n)
+{
+	return (n + BLK_SIZE - 1) / BLK_SIZE;
+}
+
 int verify_v3(FILE *f)
 {
 	char tag[4];
@@ -55,8 +65,6 @@ void gcrypt_fatal(gcry_error_t err)
 	exit(EXIT_FAILURE);
 }
 
-#define SALT_SIZE 32
-#define STRETCHED_KEY_SIZE 32
 void stretch_key(const char *pass, const uint8_t *salt, uint32_t iter, uint8_t *skey)
 {
 	gcry_error_t gerr;
@@ -111,27 +119,11 @@ void extract_random_key(const uint8_t *p, const uint8_t *a, const uint8_t *b, ui
 	gcry_cipher_close(hd);
 }
 
-uint32_t u32(void *mem)
-{
-	uint8_t *b = mem;
-	return b[0] | b[1] << 8 | b[2] << 16 | b[3] << 24;
-}
-
-#define min(a, b) (((a) < (b)) ? (a) : (b))
-
-void decrypt_block16(gcry_cipher_hd_t hd, uint8_t *out, uint8_t *in)
-{
-	gcry_error_t gerr;
-	gerr = gcry_cipher_decrypt(hd, out, 16, in, 16);
-	if (gerr != GPG_ERR_NO_ERROR)
-		gcrypt_fatal(gerr);
-}
-
 void print_time(void *field)
 {
 	struct tm lt;
 	localtime_r((time_t*)field, &lt);
-	wprintf(L"%d-%d-%d %02d:%02d:%02d", 
+	wprintf(L"%d-%d-%d %02d:%02d:%02d",
 		1900 + lt.tm_year, lt.tm_mon, lt.tm_mday, lt.tm_hour, lt.tm_min, lt.tm_sec);
 }
 
@@ -144,105 +136,139 @@ void print_guid(char *guid)
 		wprintf(L"%02x", gp[i]);
 }
 
-#define REC_BLK_SIZE 16
+int read_block(struct safeio *io, char *block)
+{
+	char tmp[BLK_SIZE];
+	freadn(tmp, sizeof(tmp), io->file);
+	if (memcmp(tmp, "PWS3-EOFPWS3-EOF", sizeof(tmp)) == 0)
+		return READ_END;
+
+	gcry_error_t gerr;
+	gerr = gcry_cipher_decrypt(io->cipher, block, BLK_SIZE, tmp, BLK_SIZE);
+	if (gerr != GPG_ERR_NO_ERROR)
+		gcrypt_fatal(gerr);
+	return READ_OK;
+}
+
+void update_hmac(struct safeio *io, const char *data, size_t sz)
+{
+	gcry_md_write(io->hmac, data, sz);
+}
+
+void * secure_malloc(size_t n)
+{
+	void *p = gcry_malloc_secure(n);
+	if (p == NULL)
+		errx(1, "exhausted secure memory allocating %zu bytes", n);
+	return p;
+}
+
+void secure_free(void *p)
+{
+	gcry_free(p);
+}
+
+int read_field(struct safeio *io, char *blktmp, struct field **fld)
+{
+	int ret;
+	ret = read_block(io, blktmp);
+	if (ret == READ_END)
+		return READ_END;
+
+	uint32_t len = xlu32(blktmp);
+	uint8_t type = blktmp[4];
+	size_t datasz = (pad_to_block(len + FLD_HDR_SIZE) * BLK_SIZE) - FLD_HDR_SIZE;
+	assert(datasz >= len);
+	struct field *f = secure_malloc(sizeof(*f) + datasz);
+
+	if (len > 0) {
+		memcpy(f->data, &blktmp[FLD_HDR_SIZE], MIN(BLK_SIZE - FLD_HDR_SIZE, len));
+		uint32_t rdcnt = MIN(BLK_SIZE - FLD_HDR_SIZE, len);
+		while (rdcnt < len) {
+			ret = read_block(io, blktmp);
+			if (ret == READ_END)
+				errx(1, "premature end of database");
+
+			/* Copy all the data including the trailing
+			 * random bytes. 
+			 */
+			memcpy(&f->data[rdcnt], blktmp, BLK_SIZE);
+			rdcnt += MIN(BLK_SIZE, len);
+		}
+	}
+	f->len = len;
+	f->type = type;
+	update_hmac(io, f->data, f->len);
+	*fld = f;
+	return READ_OK;
+}
+
+void prstr(const char *str, size_t len, FILE *fh)
+{
+	size_t i;
+	for (i = 0; i < len; i++)
+		putwc(str[i], fh);
+}
 
 void decrypt_hdr(gcry_cipher_hd_t hd, gcry_md_hd_t hmac, FILE *pwdb)
 {
-	uint8_t crypt[REC_BLK_SIZE], plain[REC_BLK_SIZE];
-	uint32_t size;
-	uint8_t type;
-	uint32_t bc, i;
-	uint32_t rem;
-	char *field;
+	char *ptext = secure_malloc(BLK_SIZE);
 
-	for (;;) {
-		freadn(crypt, REC_BLK_SIZE, pwdb);
-		decrypt_block16(hd, plain, crypt);
-		size = u32(plain);
-		type = plain[4];
-		bc = (size + 20) / REC_BLK_SIZE;
-		wprintf(L"%02x %4u %4u ", type, size, bc);
-
-		field = malloc(size + 1);
-		gcry_md_write(hmac, &plain[5], min(size, 11));
-		memmove(field, &plain[5], min(size, 11));
-		rem = size - min(size, 11);
-
-		for (i = 0; i < bc - 1; i++) {
-			freadn(crypt, REC_BLK_SIZE, pwdb);
-			decrypt_block16(hd, plain, crypt);
-			gcry_md_write(hmac, plain, min(rem, REC_BLK_SIZE));
-			memmove(&field[size - rem], plain, min(rem, REC_BLK_SIZE));
-			rem = rem - min(rem, REC_BLK_SIZE);
-		}
-
-		field[size] = 0;
-		if (type != 0 && type != 1 && type != 4 && type != 0xff)
-			wprintf(L"%s", field);
-		else if (type == 0)
-			wprintf(L"%d.%d", (int)field[1], (int)field[0]);
-		else if (type == 4)
-			print_time(field);
-		else if (type == 1)
-			print_guid(field);
+	struct safeio io;
+	io.file = pwdb;
+	io.cipher = hd;
+	io.hmac = hmac;
+	struct field *fld;
+	while (read_field(&io, ptext, &fld) == READ_OK) {
+		wprintf(L"%02x %4u  ", fld->type, fld->len);
+		if (fld->type != 0 && fld->type != 1 && fld->type != 4 && fld->type != 0xff)
+			prstr(fld->data, fld->len, stdout);
+		else if (fld->type == 0)
+			wprintf(L"%d.%d", (int)fld->data[1], (int)fld->data[0]);
+		else if (fld->type == 4)
+			print_time(fld->data);
+		else if (fld->type == 1)
+			print_guid(fld->data);
 
 		putwc('\n', stdout);
-		if (type == 0xff)
+		if (fld->type == 0xff)
 			break;
+		secure_free(fld);
 	}
+	secure_free(fld);
+	secure_free(ptext);
 }
 
 void decrypt_db(gcry_cipher_hd_t hd, gcry_md_hd_t hmac, FILE *pwdb)
 {
-	uint8_t crypt[REC_BLK_SIZE], plain[REC_BLK_SIZE];
-	uint32_t size, bc, i;
-	uint8_t type;
-	uint32_t rem;
-	char *field;
+	char *ptext = secure_malloc(BLK_SIZE);
 
-	for (;;) {
-		freadn(crypt, REC_BLK_SIZE, pwdb);
-		if (strncmp((char *)crypt, "PWS3-EOFPWS3-EOF", REC_BLK_SIZE) == 0)
-			break;
-
-		decrypt_block16(hd, plain, crypt);
-
-		size = u32(plain);
-		type = plain[4];
-		bc = (size + 20) / REC_BLK_SIZE;
-		wprintf(L"%02x %4u %4u ", type, size, bc);
-
-		gcry_md_write(hmac, &plain[5], min(size, 11));
-		field = malloc(size + 1);
-		memmove(field, &plain[5], min(size, 11));
-		rem = size - min(size, 11);
-
-		for (i = 0; i < bc - 1; i++) {
-			freadn(crypt, REC_BLK_SIZE, pwdb);
-			decrypt_block16(hd, plain, crypt);
-			gcry_md_write(hmac, plain, min(rem, REC_BLK_SIZE));
-			memmove(&field[size - rem], plain, min(rem, REC_BLK_SIZE));
-			rem = rem - min(rem, REC_BLK_SIZE);
-		}
-		field[size] = 0;
-
-		switch (type) {
+	struct safeio io;
+	io.file = pwdb;
+	io.cipher = hd;
+	io.hmac = hmac;
+	struct field *fld;
+	while (read_field(&io, ptext, &fld) == READ_OK) {
+		wprintf(L"%02x %4u  ", fld->type, fld->len);
+		switch (fld->type) {
 		case 0x2: case 0x3: case 0x4: case 0x5: case 0x6:
 		case 0xd: case 0xe: case 0xf: case 0x10: case 0x14: case 0x16:
-			wprintf(L"%s", field);
+			prstr(fld->data, fld->len, stdout);
 			break;
 		case 0x7: case 0x8: case 0x9: case 0xa: case 0xc:
-			print_time(field);
+			print_time(fld->data);
 			break;
 		case 0x1:
-			print_guid(field);
+			print_guid(fld->data);
 		}
 
 		putwc('\n', stdout);
-		if (type == 0xff)
+		if (fld->type == 0xff)
 			putwc('\n', stdout);
-		free(field);
+
+		secure_free(fld);
 	}
+	secure_free(ptext);
 }
 
 void decrypt(FILE *pwdb, const uint8_t *k, const uint8_t *iv, const uint8_t *l)

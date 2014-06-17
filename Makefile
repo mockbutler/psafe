@@ -8,3 +8,5 @@ $(EXE): $(OBJ)
 
 clean:
 	$(RM) $(EXE) $(OBJ)
+
+psafe.o: psafe.c psafe.h
