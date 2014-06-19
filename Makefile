@@ -1,12 +1,24 @@
-CFLAGS += -std=c99 -Wall -g -pedantic -D_GNU_SOURCE
-CFLAGS += $(shell libgcrypt-config --cflags)
+CFLAGS += -std=c99 -Wall -g -pedantic -D_GNU_SOURCE \
+	$(shell libgcrypt-config --cflags)
 LDLIBS += $(shell libgcrypt-config --libs)
-EXE := psafe
-OBJ := psafe.o
+SRCS = psafe.c
+OBJS = $(patsubst %.c,%.o,$(SRCS))
 
-$(EXE): $(OBJ)
+%.o: %.cc
+	$(CXX) $(CXXFLAGS) -o $@ -c $<
+
+psafe: $(OBJS)
+	$(CXX) -o psafe $+ $(LDLIBS)
+
+depend: .depend
+
+.depend: $(SRCS)
+	$(CC) $(CFLAGS) -MM $^ > ./.depend
 
 clean:
-	$(RM) $(EXE) $(OBJ)
+	$(RM) psafe $(OBJS)
 
-psafe.o: psafe.c psafe.h
+distclean: clean
+	$(RM) .depend
+
+-include .depend
