@@ -1,7 +1,7 @@
-CFLAGS += -std=c99 -Wall -g -pedantic -D_GNU_SOURCE \
+CFLAGS += -std=c99 -Wall -Wextra -g -pedantic -D_GNU_SOURCE \
 	$(shell libgcrypt-config --cflags)
 LDLIBS += $(shell libgcrypt-config --libs)
-SRCS = psafe.c
+SRCS = psafe.c crypto.c
 OBJS = $(patsubst %.c,%.o,$(SRCS))
 
 %.o: %.cc

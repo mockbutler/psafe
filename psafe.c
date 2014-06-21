@@ -17,13 +17,8 @@
 #include <unistd.h>
 #include <wchar.h>
 
+#include "crypto.h"
 #include "psafe.h"
-
-struct psafe_secure {
-	uint8_t p[32];
-	uint8_t k[32];
-	uint8_t l[32];
-};
 
 void freadn(void *buf, size_t n, FILE *f)
 {
@@ -57,37 +52,6 @@ int verify_v3(FILE *f)
 	char tag[4];
 	freadn(tag, 4, f);
 	return strncmp(tag, "PWS3", 4) == 0;
-}
-
-void gcrypt_fatal(gcry_error_t err)
-{
-	fwprintf(stderr, L"gcrypt error %s/%s\n", gcry_strsource(err), gcry_strerror(err));
-	exit(EXIT_FAILURE);
-}
-
-void stretch_key(const char *pass, const uint8_t *salt, uint32_t iter, uint8_t *skey)
-{
-	gcry_error_t gerr;
-	gcry_md_hd_t hd;
-	gerr = gcry_md_open(&hd, GCRY_MD_SHA256, GCRY_MD_FLAG_SECURE);
-	if (gerr != GPG_ERR_NO_ERROR)
-		gcrypt_fatal(gerr);
-
-	gcry_md_write(hd, pass, strlen(pass));
-	gcry_md_write(hd, salt, SALT_SIZE);
-	gcry_md_final(hd);
-	uint8_t tmp[STRETCHED_KEY_SIZE];
-	memmove(tmp, gcry_md_read(hd, 0), STRETCHED_KEY_SIZE);
-
-	uint32_t i;
-	for (i = 0; i < iter; i++) {
-		gcry_md_reset(hd);
-		gcry_md_write(hd, tmp, sizeof(tmp));
-		gcry_md_final(hd);
-		memmove(tmp, gcry_md_read(hd, 0), sizeof(tmp));
-	}
-	gcry_md_close(hd);
-	memmove(skey, tmp, STRETCHED_KEY_SIZE);
 }
 
 void sha256_block32(const uint8_t *bin, uint8_t *bout)
@@ -140,7 +104,7 @@ int read_block(struct safeio *io, char *block)
 {
 	char tmp[BLK_SIZE];
 	freadn(tmp, sizeof(tmp), io->file);
-	if (memcmp(tmp, "PWS3-EOFPWS3-EOF", sizeof(tmp)) == 0)
+	if (memcmp(tmp, "PWS3-EOFPWS3-EOF", BLK_SIZE) == 0)
 		return READ_END;
 
 	gcry_error_t gerr;
@@ -153,19 +117,6 @@ int read_block(struct safeio *io, char *block)
 void update_hmac(struct safeio *io, const char *data, size_t sz)
 {
 	gcry_md_write(io->hmac, data, sz);
-}
-
-void * secure_malloc(size_t n)
-{
-	void *p = gcry_malloc_secure(n);
-	if (p == NULL)
-		errx(1, "exhausted secure memory allocating %zu bytes", n);
-	return p;
-}
-
-void secure_free(void *p)
-{
-	gcry_free(p);
 }
 
 int read_field(struct safeio *io, char *blktmp, struct field **fld)
@@ -190,7 +141,7 @@ int read_field(struct safeio *io, char *blktmp, struct field **fld)
 				errx(1, "premature end of database");
 
 			/* Copy all the data including the trailing
-			 * random bytes. 
+			 * random bytes.
 			 */
 			memcpy(&f->data[rdcnt], blktmp, BLK_SIZE);
 			rdcnt += MIN(BLK_SIZE, len);
@@ -316,17 +267,28 @@ void decrypt(FILE *pwdb, const uint8_t *k, const uint8_t *iv, const uint8_t *l)
 	gcry_cipher_close(hd);
 }
 
+int verify_passphrase(const struct safe *safe)
+{
+	uint8_t hpgen[32];
+	sha256_block32(safe->p_prime, hpgen);
+	if (memcmp(safe->hash_p_prime, hpgen, sizeof(safe->hash_p_prime)) != 0) {
+		fwprintf(stderr, L"invalid password or corrupt file\n");
+		return -1;
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
+	setlocale(LC_ALL, "");
+
 	if (argc != 3) {
-		puts("Usage: pws [password file] [password]");
+		puts("Usage: pws file.psafe3 passphrase");
 		exit(EXIT_FAILURE);
 	}
 
-	setlocale(LC_ALL, "");
-
 	FILE *pwdb;
-	pwdb = fopen(argv[1], "r");
+	pwdb = fopen(argv[1], "rb");
 	if (!pwdb) {
 		perror(argv[1]);
 		exit(EXIT_FAILURE);
@@ -336,43 +298,22 @@ int main(int argc, char **argv)
 		goto exit_error;
 	}
 
-	uint8_t salt[32];
-	freadn(salt, sizeof(salt), pwdb);
+	struct safe *safe;
+	safe = secure_malloc(sizeof(*safe));
+	freadn(safe->salt, SALT_SIZE, pwdb);
+	freadn(&safe->iter, sizeof(safe->iter), pwdb);
+	freadn(safe->hash_p_prime, sizeof(safe->hash_p_prime), pwdb);
+	freadn(safe->b, sizeof(safe->b), pwdb);
+	freadn(safe->iv, sizeof(safe->iv), pwdb);
 
-	uint32_t iter;
-	freadn(&iter, sizeof(iter), pwdb);
-
-	uint8_t hp[32];
-	freadn(hp, sizeof(hp), pwdb);
-
-	uint8_t b[4][16];
-	int i;
-	for (i = 0; i < 4; i++)
-		freadn(b[i], sizeof(b[i]), pwdb);
-
-	uint8_t iv[16];
-	freadn(iv, sizeof(iv), pwdb);
-
-	struct psafe_secure *pss;
-	pss = gcry_malloc_secure(sizeof(*pss));
-	if (!pss) {
-		fwprintf(stderr, L"error allocating secure memory\n");
+	stretch_key(argv[2], strlen(argv[2]), safe->salt, safe->iter, safe->p_prime);
+	if (verify_passphrase(safe) != 0)
 		goto exit_error;
-	}
-	stretch_key(argv[2], salt, iter, pss->p);
 
-	uint8_t hpgen[32];
-	sha256_block32(pss->p, hpgen);
-	if (memcmp(hp, hpgen, sizeof(hp)) != 0) {
-		fwprintf(stderr, L"invalid password or corrupt file\n");
-		goto exit_error;
-	}
-
-	extract_random_key(pss->p, b[0], b[1], pss->k);
-	extract_random_key(pss->p, b[2], b[3], pss->l);
-
-	decrypt(pwdb, pss->k, iv, pss->l);
-	gcry_free(pss);
+	extract_random_key(safe->p_prime, safe->b[0], safe->b[1], safe->rand_k);
+	extract_random_key(safe->p_prime, safe->b[2], safe->b[3], safe->rand_l);
+	decrypt(pwdb, safe->rand_k, safe->iv, safe->rand_l);
+	secure_free(safe);
 	fclose(pwdb);
 	return 0;
 

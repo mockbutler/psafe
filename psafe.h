@@ -4,10 +4,7 @@
 #include <gcrypt.h>
 #include <inttypes.h>
 
-#define BLK_SIZE 16
-#define FLD_HDR_SIZE 5
-#define SALT_SIZE 32
-#define STRETCHED_KEY_SIZE 32
+#include "psafe_const.h"
 
 enum {
 	READ_OK,
@@ -24,6 +21,18 @@ struct safeio {
 	FILE *file;
 	gcry_cipher_hd_t cipher;
 	gcry_md_hd_t hmac;
+};
+
+struct safe {
+	uint8_t salt[SALT_SIZE];
+	uint32_t iter;
+	uint8_t hash_p_prime[32];
+	uint8_t b[4][16];
+	uint8_t iv[16];
+
+	uint8_t p_prime[32];	/* stretched pass phrase */
+	uint8_t rand_k[32];	/* key to decrypt the database */
+	uint8_t rand_l[32];	/* key to calculate hmac */
 };
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
