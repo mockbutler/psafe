@@ -71,7 +71,8 @@ void extract_random_key(const uint8_t *p, const uint8_t *a, const uint8_t *b, ui
 {
 	gcry_error_t gerr;
 	gcry_cipher_hd_t hd;
-	gerr = gcry_cipher_open(&hd, GCRY_CIPHER_TWOFISH, GCRY_CIPHER_MODE_ECB, GCRY_CIPHER_SECURE);
+	gerr = gcry_cipher_open(&hd, GCRY_CIPHER_TWOFISH, 
+				GCRY_CIPHER_MODE_ECB, GCRY_CIPHER_SECURE);
 	if (gerr != GPG_ERR_NO_ERROR)
 		gcrypt_fatal(gerr);
 	gerr = gcry_cipher_setkey(hd, p, 32);
@@ -86,9 +87,10 @@ void extract_random_key(const uint8_t *p, const uint8_t *a, const uint8_t *b, ui
 void print_time(void *field)
 {
 	struct tm lt;
-	localtime_r((time_t*)field, &lt);
+	gmtime_r((time_t*)field, &lt);
 	wprintf(L"%d-%d-%d %02d:%02d:%02d",
-		1900 + lt.tm_year, lt.tm_mon, lt.tm_mday, lt.tm_hour, lt.tm_min, lt.tm_sec);
+		1900 + lt.tm_year, lt.tm_mon, lt.tm_mday, 
+		lt.tm_hour, lt.tm_min, lt.tm_sec);
 }
 
 void print_guid(char *guid)
@@ -131,6 +133,7 @@ int read_field(struct safeio *io, char *blktmp, struct field **fld)
 	size_t datasz = (pad_to_block(len + FLD_HDR_SIZE) * BLK_SIZE) - FLD_HDR_SIZE;
 	assert(datasz >= len);
 	struct field *f = secure_malloc(sizeof(*f) + datasz);
+	f->next = f->prev = NULL;
 
 	if (len > 0) {
 		memcpy(f->data, &blktmp[FLD_HDR_SIZE], MIN(BLK_SIZE - FLD_HDR_SIZE, len));
@@ -161,45 +164,79 @@ void prstr(const char *str, size_t len, FILE *fh)
 		putwc(str[i], fh);
 }
 
-void decrypt_hdr(gcry_cipher_hd_t hd, gcry_md_hd_t hmac, FILE *pwdb)
-{
-	char *ptext = secure_malloc(BLK_SIZE);
+#define APPEND(last, elem)			\
+	do { (last)->next = elem;		\
+		(elem)->prev = last;		\
+		last = elem; } while (0)
 
-	struct safeio io;
-	io.file = pwdb;
-	io.cipher = hd;
-	io.hmac = hmac;
+void safe_add_hdr(struct safe *safe, struct field *fld)
+{
+	if (safe->hdr_last) {
+		APPEND(safe->hdr_last, fld);
+	} else {
+		safe->hdr_first = safe->hdr_last = fld;
+	}
+}
+
+void safe_add_rec(struct safe *safe, struct record *rec)
+{
+	if (safe->rec_last) {
+		APPEND(safe->rec_last, rec);
+	} else {
+		safe->rec_first = safe->rec_last = rec;
+	}
+}
+
+struct record * record_new()
+{
+	struct record *rec = secure_malloc(sizeof(*rec));
+	rec->prev = rec->next = NULL;
+	rec->first = rec->last = NULL;
+	return rec;
+}
+
+void rec_add_fld(struct record *rec, struct field *fld)
+{
+	if (rec->last) {
+		APPEND(rec->last, fld);
+	} else {
+		rec->first = rec->last = fld;
+	}
+}
+
+void decrypt_hdr(struct safeio *io, char *ptext, struct safe *safe)
+{
 	struct field *fld;
-	while (read_field(&io, ptext, &fld) == READ_OK) {
+	while (read_field(io, ptext, &fld) == READ_OK) {
+		safe_add_hdr(safe, fld);
+		if (fld->type == 0xff)
+			break;
+	}
+}
+
+void print_hdr(struct safe *safe, FILE *stream)
+{
+	struct field *fld;
+	fld = safe->hdr_first;
+	while (fld != NULL) {
 		wprintf(L"%02x %4u  ", fld->type, fld->len);
 		if (fld->type != 0 && fld->type != 1 && fld->type != 4 && fld->type != 0xff)
-			prstr(fld->data, fld->len, stdout);
+			prstr(fld->data, fld->len, stream);
 		else if (fld->type == 0)
 			wprintf(L"%d.%d", (int)fld->data[1], (int)fld->data[0]);
 		else if (fld->type == 4)
 			print_time(fld->data);
 		else if (fld->type == 1)
 			print_guid(fld->data);
-
-		putwc('\n', stdout);
-		if (fld->type == 0xff)
-			break;
-		secure_free(fld);
+		putwc('\n', stream);
+		fld = fld->next;
 	}
-	secure_free(fld);
-	secure_free(ptext);
 }
 
-void decrypt_db(gcry_cipher_hd_t hd, gcry_md_hd_t hmac, FILE *pwdb)
+void print_rec(struct record *rec)
 {
-	char *ptext = secure_malloc(BLK_SIZE);
-
-	struct safeio io;
-	io.file = pwdb;
-	io.cipher = hd;
-	io.hmac = hmac;
-	struct field *fld;
-	while (read_field(&io, ptext, &fld) == READ_OK) {
+	struct field *fld = rec->first;
+	while (fld != NULL) {
 		wprintf(L"%02x %4u  ", fld->type, fld->len);
 		switch (fld->type) {
 		case 0x2: case 0x3: case 0x4: case 0x5: case 0x6:
@@ -215,14 +252,37 @@ void decrypt_db(gcry_cipher_hd_t hd, gcry_md_hd_t hmac, FILE *pwdb)
 
 		putwc('\n', stdout);
 		if (fld->type == 0xff)
-			putwc('\n', stdout);
-
-		secure_free(fld);
+			break;
+		fld = fld->next;
 	}
-	secure_free(ptext);
 }
 
-void decrypt(FILE *pwdb, const uint8_t *k, const uint8_t *iv, const uint8_t *l)
+void print_db(struct safe *safe)
+{
+	struct record *rec = safe->rec_first;
+	while (rec != NULL) {
+		print_rec(rec);
+		putwc('\n', stdout);
+		rec = rec->next;
+	}
+}
+
+void decrypt_db(struct safeio *io, char *ptext, struct safe *safe)
+{
+	struct field *fld;
+	struct record *rec = NULL;
+	while (read_field(io, ptext, &fld) == READ_OK) {
+		if (rec == NULL)
+			rec = record_new();
+		rec_add_fld(rec, fld);
+		if (fld->type == 0xff) {
+			safe_add_rec(safe, rec);
+			rec = NULL;
+		}
+	}
+}
+
+void decrypt(FILE *pwdb, struct safe *safe)
 {
 	gcry_error_t gerr;
 	gcry_cipher_hd_t hd;
@@ -230,11 +290,11 @@ void decrypt(FILE *pwdb, const uint8_t *k, const uint8_t *iv, const uint8_t *l)
 	if (gerr != GPG_ERR_NO_ERROR)
 		gcrypt_fatal(gerr);
 
-	gerr = gcry_cipher_setkey(hd, k, 32);
+	gerr = gcry_cipher_setkey(hd, safe->rand_k, 32);
 	if (gerr != GPG_ERR_NO_ERROR)
 		gcrypt_fatal(gerr);
 
-	gerr = gcry_cipher_setiv(hd, iv, 16);
+	gerr = gcry_cipher_setiv(hd, safe->iv, 16);
 	if (gerr != GPG_ERR_NO_ERROR)
 		gcrypt_fatal(gerr);
 
@@ -243,14 +303,19 @@ void decrypt(FILE *pwdb, const uint8_t *k, const uint8_t *iv, const uint8_t *l)
 	if (gerr != GPG_ERR_NO_ERROR)
 		gcrypt_fatal(gerr);
 
-	gerr = gcry_md_setkey(hmac_hd, l, 32);
+	gerr = gcry_md_setkey(hmac_hd, safe->rand_l, 32);
 	if (gerr != GPG_ERR_NO_ERROR)
 		gcrypt_fatal(gerr);
 
-	fputws(L"--- header ---\n", stdout);
-	decrypt_hdr(hd, hmac_hd, pwdb);
-	fputws(L"--- database ---\n", stdout);
-	decrypt_db(hd, hmac_hd, pwdb);
+	struct safeio io;
+	io.file = pwdb;
+	io.cipher = hd;
+	io.hmac = hmac_hd;
+
+	char *ptext = secure_malloc(BLK_SIZE);
+	decrypt_hdr(&io, ptext, safe);
+	decrypt_db(&io, ptext, safe);
+	secure_free(ptext);
 
 	gcry_md_final(hmac_hd);
 	uint8_t hmac[32];
@@ -258,24 +323,58 @@ void decrypt(FILE *pwdb, const uint8_t *k, const uint8_t *iv, const uint8_t *l)
 	uint8_t calc_hmac[32];
 	memmove(calc_hmac, gcry_md_read(hmac_hd, GCRY_MD_SHA256), sizeof(hmac));
 	if (memcmp(calc_hmac, hmac, sizeof(hmac)) != 0) {
-		printf("error hmac verification failed\n");
-	} else {
-		printf("hmac verification successful\n");
+		wprintf(L"ERROR HMAC verification failure\n");
 	}
 
 	gcry_md_close(hmac_hd);
 	gcry_cipher_close(hd);
+
+	fputws(L"--- header ---\n", stdout);
+	print_hdr(safe, stdout);
+	fputws(L"--- database ---\n", stdout);
+	print_db(safe);
 }
 
 int verify_passphrase(const struct safe *safe)
 {
 	uint8_t hpgen[32];
 	sha256_block32(safe->p_prime, hpgen);
-	if (memcmp(safe->hash_p_prime, hpgen, sizeof(safe->hash_p_prime)) != 0) {
-		fwprintf(stderr, L"invalid password or corrupt file\n");
+	if (memcmp(safe->hash_p_prime, hpgen, sizeof(safe->hash_p_prime)) != 0)
 		return -1;
-	}
 	return 0;
+}
+
+struct safe * safe_new_empty()
+{
+	struct safe *safe;
+	safe = secure_malloc(sizeof(*safe));
+	safe->hdr_first = safe->hdr_last = NULL;
+	safe->rec_first = safe->rec_last = NULL;
+	return safe;
+}
+
+void rec_destroy(struct record *rec) 
+{
+	while (rec->first != NULL) {
+		struct field *dead = rec->first;
+		rec->first = rec->first->next;
+		secure_free(dead);
+	}
+}
+
+void safe_destroy(struct safe *safe)
+{
+	while (safe->hdr_first != NULL) {
+		struct field *dead = safe->hdr_first;
+		safe->hdr_first = safe->hdr_first->next;
+		secure_free(dead);
+	}
+	while (safe->rec_first != NULL) {
+		struct record *dead = safe->rec_first;
+		safe->rec_first = safe->rec_first->next;
+		rec_destroy(dead);
+	}
+	secure_free(safe);
 }
 
 int main(int argc, char **argv)
@@ -283,7 +382,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 
 	if (argc != 3) {
-		puts("Usage: pws file.psafe3 passphrase");
+		wprintf(L"Usage: psafe file.psafe3 passphrase");
 		exit(EXIT_FAILURE);
 	}
 
@@ -295,11 +394,12 @@ int main(int argc, char **argv)
 	}
 
 	if (!verify_v3(pwdb)) {
-		goto exit_error;
+		wprintf(L"Not a psafe3 database: bad file tag.\n");
+		exit(EXIT_FAILURE);
 	}
 
-	struct safe *safe;
-	safe = secure_malloc(sizeof(*safe));
+	struct safe *safe = safe_new_empty();
+
 	freadn(safe->salt, SALT_SIZE, pwdb);
 	freadn(&safe->iter, sizeof(safe->iter), pwdb);
 	freadn(safe->hash_p_prime, sizeof(safe->hash_p_prime), pwdb);
@@ -307,18 +407,16 @@ int main(int argc, char **argv)
 	freadn(safe->iv, sizeof(safe->iv), pwdb);
 
 	stretch_key(argv[2], strlen(argv[2]), safe->salt, safe->iter, safe->p_prime);
-	if (verify_passphrase(safe) != 0)
-		goto exit_error;
+	if (verify_passphrase(safe) != 0) {
+		wprintf(L"Bad pass phrase or corrupt file.\n");
+		exit(EXIT_FAILURE);
+	}
 
 	extract_random_key(safe->p_prime, safe->b[0], safe->b[1], safe->rand_k);
 	extract_random_key(safe->p_prime, safe->b[2], safe->b[3], safe->rand_l);
-	decrypt(pwdb, safe->rand_k, safe->iv, safe->rand_l);
-	secure_free(safe);
-	fclose(pwdb);
-	return 0;
+	decrypt(pwdb, safe);
 
- exit_error:
+	safe_destroy(safe);
 	fclose(pwdb);
-	exit(EXIT_FAILURE);
 	return 0;
 }

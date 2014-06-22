@@ -12,9 +12,15 @@ enum {
 };
 
 struct field {
+	struct field *prev, *next;
 	uint8_t type;
 	uint32_t len;
 	char data[];
+};
+
+struct record {
+	struct record *prev, *next;
+	struct field *first, *last;
 };
 
 struct safeio {
@@ -33,6 +39,9 @@ struct safe {
 	uint8_t p_prime[32];	/* stretched pass phrase */
 	uint8_t rand_k[32];	/* key to decrypt the database */
 	uint8_t rand_l[32];	/* key to calculate hmac */
+
+	struct field *hdr_first, *hdr_last;
+	struct record *rec_first, *rec_last;
 };
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
