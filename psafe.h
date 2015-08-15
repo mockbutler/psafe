@@ -1,49 +1,52 @@
+/* Copyright 2013-2015 Marc Butler <mockbutler@gmail.com>
+ * All Rights Reserved
+ */
 #ifndef PSAFE_H
 #define PSAFE_H
 
 #include <gcrypt.h>
 #include <inttypes.h>
 
-#include "psafe_const.h"
+/* The format defines the header as being the first set of records, so
+ * call this the prologue.
+ */
+struct psafe3_pro {
+	/* Starts with the fixed tag "PWS3". */
+	uint8_t salt[32];
+	uint32_t iter;
+	uint8_t h_pprime[32];
+	uint8_t b[4][16];
+	uint8_t iv[16];
+} __attribute__((packed));
 
-enum {
-	READ_OK,
-	READ_END
-};
+#define PSAFE3_PRO_SIZE (sizeof(safe_proxs) + 4)
 
+struct psafe3_epi {
+	uint8_t eof_block[16];
+	uint8_t hmac[32];
+} __attribute__((packed));
+
+#define PSAFE3_EPI_SIZE (sizeof (safe_epi))
+
+/* Field header. */
 struct field {
-	struct field *prev, *next;
-	uint8_t type;
 	uint32_t len;
-	char data[];
+	uint8_t type;
+	uint8_t val[];
+} __attribute__((packed));
+
+/* Secure safe information. */
+struct safe_sec {
+	uint8_t pprime[32];
+	uint8_t rand_k[32];
+	uint8_t rand_l[32];
 };
 
-struct record {
-	struct record *prev, *next;
-	struct field *first, *last;
-};
-
-struct safeio {
-	FILE *file;
+/* Decryption context. */
+struct decrypt_ctx {
+	gcry_error_t gerr;
 	gcry_cipher_hd_t cipher;
 	gcry_md_hd_t hmac;
 };
-
-struct safe {
-	uint8_t salt[SALT_SIZE];
-	uint32_t iter;
-	uint8_t hash_p_prime[32];
-	uint8_t b[4][16];
-	uint8_t iv[16];
-
-	uint8_t p_prime[32];	/* stretched pass phrase */
-	uint8_t rand_k[32];	/* key to decrypt the database */
-	uint8_t rand_l[32];	/* key to calculate hmac */
-
-	struct field *hdr_first, *hdr_last;
-	struct record *rec_first, *rec_last;
-};
-
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 #endif

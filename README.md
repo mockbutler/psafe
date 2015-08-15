@@ -1,7 +1,7 @@
 psafe
 =====
 
-Access Password Safe V3 database from the command line.
+Dump Password Safe V3 database from the command line.
 
 Dump the contents of [Password Safe][passwordsafe] database.
 
@@ -14,15 +14,18 @@ I've checked in to this project relevant documents from both
 Building
 --------
 
-Should build on any modern linux, assuming you ensure that a modern
-version of libgcrypt is installed. Just run `make`.
+Prerequisites:
 
-Warnings
---------
+ * [CMake][cmake]
+ * [GCrypt Library][libgcrypt]
 
-* As it stands: the password must be supplied on the command
-  line. Needless to say **do not use on a multi-user system**.
-* Rife with bugs including memory leaks.
+I recommend an out-of-source build. For example:
+
+    git clone psafe-url psafe
+    mkdir psafe-build
+    cd psafe-build
+    cmake ../psafe
+    make
 
 Alternatives
 ------------
@@ -32,5 +35,5 @@ Alternatives
   V1 and V2 **only**.
 
 [passwordsafe]: http://pwsafe.org/
-
-
+[cmake]: http://www.cmake.org/
+[libgcrypt]: http://www.gnu.org/software/libgcrypt/
