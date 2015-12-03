@@ -28,3 +28,4 @@ cov-int/
 .gdbinit
 
 b/*
+.DS_Store

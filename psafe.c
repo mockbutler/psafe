@@ -112,10 +112,19 @@ void print_uuid(uint8_t *uuid)
 	printhex(stdout, uuid + 10, 6);
 }
 
+/* Print out utf-8 string. */
 void pws(FILE *f, uint8_t *bp, size_t len)
 {
-	while (len--)
-		putwc(*bp++, f);
+    mbstate_t state;
+    memset(&state, 0, sizeof(state));
+    wchar_t *tmp;
+    tmp = malloc((len + 1) * sizeof(wchar_t));
+    size_t n;
+    const char *ptr = (const char *)bp;
+    n = mbsnrtowcs(tmp, &ptr, len, len, &state);
+    tmp[n] = L'\0';
+    fputws(tmp, stdout);
+    free(tmp);
 }
 
 void hd_print(FILE *f, struct field *fld)
@@ -279,7 +288,7 @@ int main(int argc, char **argv)
 	uint8_t *ptr;
 	ptr = mapfile_ro(argv[1], &sz);
 	if (ptr == NULL)
-		err(1, argv[1]);
+		err(1, "%s", argv[1]);
 
 	struct psafe3_pro *pro;
 	pro = (struct psafe3_pro *)(ptr + 4);
