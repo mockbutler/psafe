@@ -27,7 +27,7 @@ int main(int argc, char **argv)
 	sha256_init(&sha256);
 	char test[] = { 0x61, 0x62, 0x63 };
 	sha256_update(&sha256, test, 3);
-	uint8_t hash[64];
+	uint8_t hash[32];
 	sha256_finalize(&sha256, hash);
 
 	static const uint8_t testvec[] = {

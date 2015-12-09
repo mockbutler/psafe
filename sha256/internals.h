@@ -176,7 +176,7 @@ STATIC void append_size(struct sha256_state *state)
 STATIC void extract_hash(struct sha256_state *state, uint8_t *hash)
 {
 	int i;
-	for (i = 0; i < 64; i++)
+	for (i = 0; i < 32; i++)
 		hash[i] = state->W[i/4] >> (24 - 8 * (i%4));
 }
 
