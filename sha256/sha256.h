@@ -12,7 +12,8 @@ struct sha256_state {
 };
 
 void sha256_init(struct sha256_state *state);
-void sha256_update(struct sha256_state *state, void *in, size_t inlen);
+void sha256_update(struct sha256_state *state,
+		   const void *in, size_t inlen);
 void sha256_finalize(struct sha256_state *state, uint8_t h[64]);
 
 #endif

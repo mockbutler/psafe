@@ -5,6 +5,9 @@
 #define _POSIX_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
+/* generated config file */
+#include <config.h>
+
 #include <assert.h>
 #include <err.h>
 #include <gcrypt.h>
@@ -18,6 +21,7 @@
 #include <wchar.h>
 
 #include "mapfile.h"
+#include "sha256/sha256.h"
 #include "psafe.h"
 
 #define TWOF_BLKSIZE 16		/* Twofish cipher block size bytes. */
@@ -30,6 +34,7 @@ void gcrypt_fatal(gcry_error_t err)
 	exit(EXIT_FAILURE);
 }
 
+#ifndef USE_INTERNAL_SHA256
 void stretch_key(const char *pass, size_t passlen,
 		 const uint8_t *salt, uint32_t iter,
 		 uint8_t *skey)
@@ -64,6 +69,40 @@ void sha256_block32(const uint8_t *in, uint8_t *out)
 	memmove(out, gcry_md_read(hd, 0), 32);
 	gcry_md_close(hd);
 }
+
+#else
+
+void stretch_key(const char *pass, size_t passlen,
+		 const uint8_t *salt, uint32_t iter,
+		 uint8_t *skey)
+{
+	struct sha256_state sha256;
+	sha256_init(&sha256);
+	sha256_update(&sha256, pass, passlen);
+	sha256_update(&sha256, salt, 32);
+	uint8_t hash[64];
+	sha256_finalize(&sha256, hash);
+	memmove(skey, hash, 32);
+
+	while (iter-- > 0) {
+		sha256_init(&sha256);
+		sha256_update(&sha256, skey, 32);
+		sha256_finalize(&sha256, hash);
+		memmove(skey, hash, 32);
+	}
+}
+
+void sha256_block32(const uint8_t *in, uint8_t *out)
+{
+	struct sha256_state sha256;
+	sha256_init(&sha256);
+	sha256_update(&sha256, in, 32);
+	uint8_t hash[64];
+	sha256_finalize(&sha256, hash);
+	memmove(out, hash, 32);
+}
+
+#endif
 
 void extract_random_key(const uint8_t *stretchkey,
 			const uint8_t *fst, const uint8_t *snd,

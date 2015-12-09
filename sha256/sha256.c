@@ -17,7 +17,7 @@ void sha256_init(struct sha256_state *state)
 	state->bitlen = 0;
 }
 
-void sha256_update(struct sha256_state *state, void *in, size_t inlen)
+void sha256_update(struct sha256_state *state, const void *in, size_t inlen)
 {
 	while (inlen > 0) {
 		size_t n = fill(state, (uint8_t**)&in, &inlen);
