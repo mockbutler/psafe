@@ -2,6 +2,9 @@
  * All Rights Reserved
  */
 
+#define _POSIX_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <assert.h>
 #include <err.h>
 #include <gcrypt.h>
