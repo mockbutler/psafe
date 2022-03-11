@@ -21,11 +21,13 @@
 *.i*86
 *.x86_64
 *.hex
+
+# Project specific
 psafe
 cov-int/
 *~
 .depend
 .gdbinit
-
-b/*
+out/
+.vs/
 .DS_Store

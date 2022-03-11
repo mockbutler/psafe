@@ -83,13 +83,13 @@ void extract_random_key(const uint8_t *stretchkey,
 
 void print_time(uint8_t *val)
 {
-	struct tm lt;
+	struct tm *lt;
 	time_t time;
 	time = val[0] | val[1] << 8 | val[2] << 16 | val[3] << 24;
-	gmtime_r(&time, &lt);
+	lt = gmtime(&time);
 	wprintf(L"%d-%d-%d %02d:%02d:%02d",
-		1900 + lt.tm_year, lt.tm_mon, lt.tm_mday,
-		lt.tm_hour, lt.tm_min, lt.tm_sec);
+		1900 + lt->tm_year, lt->tm_mon, lt->tm_mday,
+		lt->tm_hour, lt->tm_min, lt->tm_sec);
 }
 
 void printhex(FILE *f, uint8_t *ptr, unsigned cnt)
@@ -121,7 +121,7 @@ void pws(FILE *f, uint8_t *bp, size_t len)
     tmp = malloc((len + 1) * sizeof(wchar_t));
     size_t n;
     const char *ptr = (const char *)bp;
-    n = mbsnrtowcs(tmp, &ptr, len, len, &state);
+    n = mbsrtowcs(tmp, &ptr, len, &state);
     tmp[n] = L'\0';
     fputws(tmp, stdout);
     free(tmp);
