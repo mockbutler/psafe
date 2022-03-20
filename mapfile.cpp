@@ -18,14 +18,17 @@ void * mapfile(const char *path, size_t *size, int oflg, int prot, int mflg)
     assert(size != NULL);
 
     fd = open(path, oflg);
-    if (fd < 0)
+    if (fd < 0) {
         return NULL;
-    if (fstat(fd, &nfo) != 0)
+    }
+    if (fstat(fd, &nfo) != 0) {
         goto exit_err;
+    }
 
     ptr = mmap(NULL, nfo.st_size, prot, mflg, fd, 0);
-    if (ptr == MAP_FAILED)
+    if (ptr == MAP_FAILED) {
         goto exit_err;
+    }
 
     *size = nfo.st_size;
     return ptr;
