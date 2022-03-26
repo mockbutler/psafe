@@ -2,10 +2,6 @@
  * All Rights Reserved
  */
 
-#include <assert.h>
-#include <err.h>
-#include <gcrypt.h>
-#include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +10,11 @@
 #include <unistd.h>
 #include <wchar.h>
 
+#include <cassert>
+#include <cstdint>
+#include <fstream>
 #include <ios>
+#include <iostream>
 
 #include <crypto++/sha.h>
 #include <crypto++/modes.h>
@@ -22,11 +22,78 @@
 
 #include "mapfile.h"
 #include "psafe.h"
-#include <iostream>
+
 
 #define TWOF_BLKSIZE 16		/* Twofish cipher block size bytes. */
 #define SHA256_SIZE 32		/* SHA-256 size in bytes. */
 
+std::unique_ptr<PasswordSafe> PasswordSafe::Load(std::istream& source, const CryptoPP::SecBlock<byte>& password)
+{
+    using namespace std;
+    using namespace CryptoPP;
+
+    assert(source.binary);
+    assert(password.SizeInBytes() > 0);
+    unique_ptr<PasswordSafe> safe(new PasswordSafe);
+    static const byte Tag[] = {'P', 'W', 'S', '3'};
+    byte tag[sizeof(Tag)];
+    ReadBytes(source, tag, sizeof(tag));
+    if (memcmp(Tag, tag, sizeof(tag)) != 0) {
+        throw std::runtime_error("Not a valid PasswordSafe V3 database: invalid tag.");
+    }
+    ReadBytes(source, safe->salt_, sizeof(safe->salt_));
+    byte iter[sizeof(uint32_t)];
+    ReadBytes(source, iter, sizeof(iter));
+    safe->iter_ = iter[3] << 24 | iter[2] << 16 | iter[1] << 8 | iter[0];
+    ReadBytes(source, safe->secretKeyHash_, sizeof(safe->secretKeyHash_));
+    ReadBytes(source, &safe->b_[0][0], sizeof(safe->b_));
+    ReadBytes(source, safe->iv_, sizeof(safe->iv_));
+
+    SHA256 hash;
+    size_t hashTempSize = SHA256::DIGESTSIZE;
+    auto hashTemp = hash.CreateUpdateSpace(hashTempSize);
+    hash.Update(password, password.SizeInBytes());
+    hash.Update(safe->salt_, sizeof(salt_));
+    hash.Final(hashTemp);
+    for (size_t i = 0; i < safe->iter_; ++i) {
+        hash.CalculateDigest(safe->secretKey_.BytePtr(), hashTemp, safe->secretKey_.SizeInBytes());
+        memmove(hashTemp, safe->secretKey_.BytePtr(), hashTempSize);
+    }
+
+    byte validatingHash[SHA256::DIGESTSIZE];
+    HashOneBlock(safe->secretKey_, validatingHash);
+    if (memcmp(validatingHash, safe->secretKeyHash_, SHA256::DIGESTSIZE) != 0) {
+        throw new std::runtime_error("Invalid password.");
+    }
+
+    ECB_Mode< Twofish >::Decryption ecb;
+    ecb.SetKey(safe->secretKey_, SHA256::DIGESTSIZE);
+    ecb.ProcessData(safe->randomKeyK_, &safe->b_[0][0], SHA256::DIGESTSIZE);
+
+    ecb.SetKey(safe->secretKey_, SHA256::DIGESTSIZE);
+    ecb.ProcessData(safe->randomKeyL_, &safe->b_[2][0], SHA256::DIGESTSIZE);
+
+    CBC_Mode< CryptoPP::Twofish >::Decryption cbc;
+    HMAC< CryptoPP::SHA256 > hmac;
+
+    return safe;
+}
+
+void PasswordSafe::ReadBytes(std::istream& source, byte* buf, size_t bufSize)
+{
+    assert(source.good());
+    assert(source.binary);
+    assert(buf != nullptr);
+    if (!source.read(reinterpret_cast<char*>(buf), bufSize)) {
+        throw std::runtime_error("Read error.");
+    }
+}
+
+void PasswordSafe::HashOneBlock(byte* block, byte* digest)
+{
+    CryptoPP::SHA256 sha256;
+    sha256.CalculateDigest(digest, block, CryptoPP::SHA256::DIGESTSIZE);
+}
 
 void stretch_key(const char *pass, size_t passlen,
                  const uint8_t *salt, uint32_t iter,
@@ -216,108 +283,122 @@ int stretch_and_check_pass(const char *pass, size_t passlen,
 
 int main(int argc, char **argv)
 {
+    using namespace std;
+
     int ret;
     setlocale(LC_ALL, "");
 
-    if (argc != 3) {
-        wprintf(L"Usage: psafe file.psafe3 passphrase");
-        exit(EXIT_FAILURE);
-    }
-
-    size_t sz;
-    uint8_t *ptr;
-    ptr = reinterpret_cast<uint8_t *>(mapfile_ro(argv[1], &sz));
-    if (ptr == NULL) {
-        err(1, "%s", argv[1]);
-    }
-
-    struct psafe3_pro *pro;
-    pro = (struct psafe3_pro *)(ptr + 4);
-    CryptoPP::SecBlock<safe_sec> safeSecMem(1);
-    struct safe_sec *sec;
-    sec = reinterpret_cast<safe_sec *>(safeSecMem.BytePtr());
-    ret = stretch_and_check_pass(argv[2], strlen(argv[2]), pro, sec);
-    if (ret != 0) {
-        wprintf(L"Invalid password.\n");
-        exit(1);
-    }
-
-    uint8_t *safe;
-    size_t safe_size;
-    safe_size = sz - (4 + sizeof(*pro) + 48);
-    assert(safe_size > 0);
-    assert(safe_size % TWOF_BLKSIZE == 0);
-    CryptoPP::SecBlock<byte> safeMem(safe_size);
-    safe = safeMem.BytePtr();
-    assert(safe != NULL);
-
-    psafe::Decrypt ctx;
-    if (init_decrypt_ctx(&ctx, pro, sec) < 0) {
-        std::cerr << "Failed to init decryption context.\n";
-        exit(1);
-    }
-
-    size_t bcnt;
-    bcnt = safe_size / TWOF_BLKSIZE;
-    assert(bcnt > 0);
-    uint8_t *encp;
-    uint8_t *safep;
-    encp = ptr + 4 + sizeof(*pro);
-    safep = safe;
-    while (bcnt--) {
-        ctx.decrypt.ProcessData(safep, encp, TWOF_BLKSIZE);
-        safep += TWOF_BLKSIZE;
-        encp += TWOF_BLKSIZE;
-    }
-
-    enum { HDR, DB };
-    int state = HDR;
-    safep = safe;
-    while (safep < safe + safe_size) {
-        struct field *fld;
-        fld = (struct field *)safep;
-        wprintf(L"len=%-3u  type=%02x  ", fld->len, fld->type);
-        if (state == DB) {
-            db_print(stdout, fld);
-        } else {
-            hd_print(stdout, fld);
-        }
-        if (fld->type == 0xff) {
-            state = DB;
-        }
-        putwc('\n', stdout);
-
-        if (fld->len) {
-            ctx.hmac.Update(safep + sizeof(*fld), fld->len);
+    try {
+        if (argc != 3) {
+            throw std::runtime_error("Usage: psafe file.psafe3 passphrase");
         }
 
-        safep += ((fld->len + 5 + 15) / TWOF_BLKSIZE) * TWOF_BLKSIZE;
-    }
+        size_t sz;
+        uint8_t* ptr;
+        ptr = reinterpret_cast<uint8_t*>(mapfile_ro(argv[1], &sz));
+        if (ptr == nullptr) {
+            throw std::runtime_error("Failed to map file.");
+        }
 
-    assert(memcmp(ptr + (sz - 48), "PWS3-EOFPWS3-EOF", TWOF_BLKSIZE) == 0);
+        struct psafe3_pro* pro;
+        pro = (struct psafe3_pro*)(ptr + 4);
+        CryptoPP::SecBlock<safe_sec> safeSecMem(1);
+        struct safe_sec* sec;
+        sec = reinterpret_cast<safe_sec*>(safeSecMem.BytePtr());
+        ret = stretch_and_check_pass(argv[2], strlen(argv[2]), pro, sec);
+        if (ret != 0) {
+            throw std::runtime_error("Invalid password.");
+        }
+
+        uint8_t* safe;
+        size_t safe_size;
+        safe_size = sz - (4 + sizeof(*pro) + 48);
+        assert(safe_size > 0);
+        assert(safe_size % TWOF_BLKSIZE == 0);
+        CryptoPP::SecBlock<byte> safeMem(safe_size);
+        safe = safeMem.BytePtr();
+        assert(safe != NULL);
+
+        psafe::Decrypt ctx;
+        if (init_decrypt_ctx(&ctx, pro, sec) < 0) {
+            throw std::runtime_error("Failed to init decryption context.\n");
+        }
+
+        size_t bcnt;
+        bcnt = safe_size / TWOF_BLKSIZE;
+        assert(bcnt > 0);
+        uint8_t* encp;
+        uint8_t* safep;
+        encp = ptr + 4 + sizeof(*pro);
+        safep = safe;
+        while (bcnt--) {
+            ctx.decrypt.ProcessData(safep, encp, TWOF_BLKSIZE);
+            safep += TWOF_BLKSIZE;
+            encp += TWOF_BLKSIZE;
+        }
+
+        enum { HDR, DB };
+        int state = HDR;
+        safep = safe;
+        while (safep < safe + safe_size) {
+            struct field* fld;
+            fld = (struct field*)safep;
+            wprintf(L"len=%-3u  type=%02x  ", fld->len, fld->type);
+            if (state == DB) {
+                db_print(stdout, fld);
+            }
+            else {
+                hd_print(stdout, fld);
+            }
+            if (fld->type == 0xff) {
+                state = DB;
+            }
+            putwc('\n', stdout);
+
+            if (fld->len) {
+                ctx.hmac.Update(safep + sizeof(*fld), fld->len);
+            }
+
+            safep += ((fld->len + 5 + 15) / TWOF_BLKSIZE) * TWOF_BLKSIZE;
+        }
+
+        assert(memcmp(ptr + (sz - 48), "PWS3-EOFPWS3-EOF", TWOF_BLKSIZE) == 0);
 
 #define EOL() putwc('\n', stdout)
-    EOL();
-    print_prologue(stdout, pro);
-    wprintf(L"KEY    ");
-    printhex(stdout, sec->pprime, 32);
-    EOL();
-    wprintf(L"H(KEY) ");
-    printhex(stdout, pro->h_pprime, 32);
-    EOL();
+        EOL();
+        print_prologue(stdout, pro);
+        wprintf(L"KEY    ");
+        printhex(stdout, sec->pprime, 32);
+        EOL();
+        wprintf(L"H(KEY) ");
+        printhex(stdout, pro->h_pprime, 32);
+        EOL();
 
-    byte hmac_digest[32];
-    ctx.hmac.Final(hmac_digest);
-    wprintf(L"HMAC'  ");
-    printhex(stdout, hmac_digest, 32);
-    EOL();
+        byte hmac_digest[32];
+        ctx.hmac.Final(hmac_digest);
+        wprintf(L"HMAC'  ");
+        printhex(stdout, hmac_digest, 32);
+        EOL();
 
-    wprintf(L"HMAC   ");
-    printhex(stdout, ptr + (sz - 32), 32);
-    EOL();
+        wprintf(L"HMAC   ");
+        printhex(stdout, ptr + (sz - 32), 32);
+        EOL();
 #undef EOL
 
-    unmapfile(ptr, sz);
+        unmapfile(ptr, sz);
 
-    exit(0);
+        std::ifstream safeFile(argv[1], std::ios::binary);
+        CryptoPP::SecBlock<byte> password(reinterpret_cast<byte*>(argv[2]), strlen(argv[2]));
+        auto psafe = PasswordSafe::Load(safeFile, password);
+
+        exit(EXIT_SUCCESS);
+    }
+    catch (std::exception& e) {
+        wcerr << L"\n" << e.what() << endl;
+        exit(EXIT_FAILURE);
+    }
+    catch (...) {
+        wcerr << "Unhandled exception." << endl;
+        exit(EXIT_FAILURE);
+    }
 }
