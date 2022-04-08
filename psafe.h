@@ -1,88 +1,107 @@
-/* Copyright 2013-2015 Marc Butler <mockbutler@gmail.com>
- * All Rights Reserved
- */
-#ifndef PSAFE_H
-#define PSAFE_H
+#pragma once
+// Copyright 2013-2022 Marc Butler <mockbutler@gmail.com>. All Rights Reserved.
 
 #include <cstdint>
 
-#include <crypto++/cryptlib.h>
-#include <crypto++/hmac.h>
-#include <crypto++/modes.h>
-#include <crypto++/secblock.h>
-#include <crypto++/twofish.h>
+#include "crypto.h"
+#include "field.h"
 
-class PasswordSafe
-{
-public:
-	PasswordSafe() :
-		secretKey_(DigestSize),
-		randomKeyK_(DigestSize),
-		randomKeyL_(DigestSize)
-	{}
+namespace psafe {
 
-	static std::unique_ptr<PasswordSafe> Load(std::istream& source, const CryptoPP::SecBlock<byte>& password);
-private:
-	// Twofish block size used for encryption/decryption.
-	static constexpr size_t BlockSize = CryptoPP::Twofish::BLOCKSIZE;
+	enum class HeaderFieldType : uint8_t {
+		Version = 0x00,
+		UUID = 0x01,
+		NonDefaultPreferences = 0x02,
+		TreeDisplayStatus = 0x03,
+		TimestampOfLastSave = 0x04,
+		WhoPerformedLastSave = 0x05,
+		WhatPerformedLastSave = 0x06,
+		LastSavedByUser = 0x07,
+		LastSavedOnHost = 0x08,
+		DatabaseName = 0x09,
+		DatabaseDescription = 0x0a,
+		DatabaseFilters = 0x0b,
+		// Reserved 0x0c
+		// Reserved 0x0d
+		// Reserved 0x0e
+		RecentlyUsedEntries = 0x0f,
+		NamedPasswordPolicies = 0x10,
+		EmptyGroups = 0x11,
+		// Reserved 0x12  
+		EndOfEntry = 0xff
+	};
 
-	// Digest size for SHA256 hash function.
-	static constexpr size_t DigestSize = CryptoPP::SHA256::DIGESTSIZE;
+	enum class RecordFieldName : uint8_t {
+		UUID = 0x01,
+		Group = 0x02,
+		Title = 0x03,
+		Username = 0x04,
+		Notes = 0x05,
+		Password = 0x06,
+		CreationTime = 0x07,
+		PasswordModificationTime = 0x08,
+		LastAccessTime = 0x09,
+		PasswordExpiryTime = 0x0a,
+		// Reserved 0x0b
+		LastModificationTime = 0x0c,
+		URL = 0x0d,
+		Autotype = 0x0e,
+		PasswordHistory = 0x0f,
+		PasswordPolicy = 0x10,
+		PasswordExpiryInterval = 0x11,
+		RunCommand = 0x12,
+		DoubleClickAction = 0x13,
+		EmailAddress = 0x14,
+		ProtectedEntry = 0x15,
+		OwnSymbolsForPassword = 0x16,
+		ShiftDoubleClickAction = 0x17,
+		PasswordPolicyName = 0x18,
+		EntryKeyboardShortcut = 0x19,
+		EndOfEntry = 0xff
+	};
 
-	byte salt_[32];							// Salt used in key stretching.
-	uint32_t iter_;							// Iteration count for key stretching.
-	byte secretKeyHash_[DigestSize];		// SHA256 hash of secret key. Used for password validation.
-	byte b_[4][BlockSize];					// Encrypted blocks for random keys K and L.
-	byte iv_[16];							// Initial value used for decryption.
+	inline bool operator==(const RecordFieldName& rfType, uint8_t rawType) {
+		return static_cast<uint8_t>(rfType) == rawType;
+	}
 
-	CryptoPP::SecBlock<byte> secretKey_;	
-	CryptoPP::SecBlock<byte> randomKeyK_;
-	CryptoPP::SecBlock<byte> randomKeyL_;
+	inline bool operator==(uint8_t rawType, const RecordFieldName& rfType) {
+		return static_cast<uint8_t>(rfType) == rawType;
+	}
 
-	static void ReadBytes(std::istream& source, byte* buf, size_t bufSize);
+	class Record {
+		std::map<RecordFieldName, Field> fields_;
+	public:
+		Record(std::list<Field>&& fields)
+		{
+			for (auto i = fields.begin(); i != fields.end(); ++i) {
+				fields_.emplace(std::make_pair(
+					static_cast<RecordFieldName>(i->Tag()), std::move(*i)));
+			}
+			fields.clear();
+		}
 
-	static void HashOneBlock(byte* block, byte* digest);
-};
+		bool HasField(RecordFieldName ftype) const { 
+			return fields_.find(ftype) != fields_.end();
+		}
 
-namespace psafe
-{
-// Crude decryption context.
-struct Decrypt {
-	CryptoPP::CBC_Mode< CryptoPP::Twofish >::Decryption decrypt;
-	CryptoPP::HMAC< CryptoPP::SHA256 > hmac;
-};
+		const Field& GetField(RecordFieldName name) const {
+			auto iter = fields_.find(name); 
+			return iter->second;
+		}
+	};
 
+	class PasswordSafe {
+		friend std::ostream& operator<<(std::ostream& out, const PasswordSafe& safe);
+
+		std::vector<byte> salt_;
+		std::list<Field> headers_;
+		std::list<Record> records_;
+		uint32_t iterations_;
+		std::vector<byte> initialValue_;
+		CryptoPP::SecBlock<byte> randomKeyK_;
+		CryptoPP::SecBlock<byte> randomKeyL_;
+
+	public:
+		static std::unique_ptr<PasswordSafe> Load(std::istream& source, const CryptoPP::SecBlock<byte>& passPhrase);
+	};
 }
-
-/* The format defines the header as being the first set of records, so
- * call this the prologue.
- */
-struct psafe3_pro {
-	/* Starts with the fixed tag "PWS3". */
-	uint8_t salt[32];
-	uint32_t iter;
-	uint8_t h_pprime[32];
-	uint8_t b[4][16];
-	uint8_t iv[16];
-} __attribute__((packed));
-
-struct psafe3_epi {
-	uint8_t eof_block[16];
-	uint8_t hmac[32];
-} __attribute__((packed));
-
-/* Field header. */
-struct field {
-	uint32_t len;
-	uint8_t type;
-	uint8_t val[];
-} __attribute__((packed));
-
-/* Secure safe information. */
-struct safe_sec {
-	uint8_t pprime[32];
-	uint8_t rand_k[32];
-	uint8_t rand_l[32];
-};
-
-#endif
