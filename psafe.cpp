@@ -85,7 +85,7 @@ namespace psafe {
 			stretch.Restart();
 			stretch.CalculateDigest(stretchedKey, stretchTmp, sizeof(stretchTmp));
 		}
-		if (!SHA256().VerifyDigest(stretchedKeyHash.data(), stretchedKey,
+		if (!stretch.VerifyDigest(stretchedKeyHash.data(), stretchedKey,
 			stretchedKey.SizeInBytes())) {
 			throw std::runtime_error("Invalid pass phrase.");
 		}
