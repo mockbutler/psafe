@@ -26,7 +26,8 @@ namespace psafe {
 		stream << " : ";
 		for (size_t i = 0; i < count; i++) {
 			if (isprint(buf[i])) {
-				stream << static_cast<wchar_t>(buf[i]);
+				//stream << static_cast<wchar_t>(buf[i]);
+				stream << buf[i];
 			}
 			else {
 				stream << ' ';
