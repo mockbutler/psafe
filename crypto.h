@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cryptopp/hmac.h>
-#include <cryptopp/modes.h>
-#include <cryptopp/sha.h>
-#include <cryptopp/twofish.h>
+#include <crypto++/hmac.h>
+#include <crypto++/modes.h>
+#include <crypto++/sha.h>
+#include <crypto++/twofish.h>
