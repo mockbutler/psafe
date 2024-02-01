@@ -31,5 +31,3 @@ cov-int/
 out/
 .vs/
 .DS_Store
-.vscode/
-build/

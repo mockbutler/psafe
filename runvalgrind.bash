@@ -14,8 +14,8 @@ psafe_pass=$3
 ensure_exists $psafe_bin;
 ensure_exists $psafe_safe;
 
-log=log.profile.$$
+log=valgrind.$$
 
-valgrind --tool=callgrind --dump-instr=yes --simulate-cache=yes --collect-jumps=yes $psafe_bin $psafe_safe "$psafe_pass"
+echo valgrind -v --leak-check=full --show-leak-kinds=all $psafe_bin $psafe_safe \'$psafe_pass\' 2>&1 | tee $log
 
-echo $log
+echo "LOG: $log"
