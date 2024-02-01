@@ -4,21 +4,8 @@
 #ifndef PSAFE_H
 #define PSAFE_H
 
-#include <cstdint>
-
-#include <crypto++/cryptlib.h>
-#include <crypto++/hmac.h>
-#include <crypto++/modes.h>
-#include <crypto++/twofish.h>
-
-namespace psafe
-{
-// Crude decryption context.
-struct Decrypt {
-    CryptoPP::CBC_Mode< CryptoPP::Twofish >::Decryption decrypt;
-    CryptoPP::HMAC< CryptoPP::SHA256 > hmac;
-};
-}
+#include <gcrypt.h>
+#include <inttypes.h>
 
 /* The format defines the header as being the first set of records, so
  * call this the prologue.
@@ -32,10 +19,14 @@ struct psafe3_pro {
     uint8_t iv[16];
 } __attribute__((packed));
 
+#define PSAFE3_PRO_SIZE (sizeof(safe_proxs) + 4)
+
 struct psafe3_epi {
     uint8_t eof_block[16];
     uint8_t hmac[32];
 } __attribute__((packed));
+
+#define PSAFE3_EPI_SIZE (sizeof (safe_epi))
 
 /* Field header. */
 struct field {
@@ -49,6 +40,13 @@ struct safe_sec {
     uint8_t pprime[32];
     uint8_t rand_k[32];
     uint8_t rand_l[32];
+};
+
+/* Decryption context. */
+struct decrypt_ctx {
+    gcry_error_t gerr;
+    gcry_cipher_hd_t cipher;
+    gcry_md_hd_t hmac;
 };
 
 #endif

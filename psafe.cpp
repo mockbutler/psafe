@@ -14,52 +14,71 @@
 #include <unistd.h>
 #include <wchar.h>
 
-#include <ios>
-
-#include <crypto++/sha.h>
-#include <crypto++/modes.h>
-#include <crypto++/twofish.h>
-
 #include "mapfile.h"
 #include "psafe.h"
-#include <iostream>
 
 #define TWOF_BLKSIZE 16		/* Twofish cipher block size bytes. */
 #define SHA256_SIZE 32		/* SHA-256 size in bytes. */
 
+void gcrypt_fatal(gcry_error_t err)
+{
+    fwprintf(stderr, L"gcrypt error %s/%s\n",
+             gcry_strsource(err), gcry_strerror(err));
+    exit(EXIT_FAILURE);
+}
 
 void stretch_key(const char *pass, size_t passlen,
                  const uint8_t *salt, uint32_t iter,
                  uint8_t *skey)
 {
-    using namespace CryptoPP;
-    SHA256 sha256;
-    sha256.Update(reinterpret_cast<const byte*>(pass), passlen);
-    sha256.Update(salt, 32);
-    sha256.Final(skey);
-    byte digest[SHA256::DIGESTSIZE];
+    gcry_error_t gerr;
+    gcry_md_hd_t sha256;
+    gerr = gcry_md_open(&sha256, GCRY_MD_SHA256, GCRY_MD_FLAG_SECURE);
+    if (gerr != GPG_ERR_NO_ERROR)
+        gcrypt_fatal(gerr);
+
+    gcry_md_write(sha256, pass, passlen);
+    gcry_md_write(sha256, salt, 32);
+    memmove(skey, gcry_md_read(sha256, 0), 32);
+
     while (iter-- > 0) {
-        sha256.Restart();
-        sha256.CalculateDigest(digest, skey, 32);
-        memcpy(skey, digest, sizeof(digest));
+        gcry_md_reset(sha256);
+        gcry_md_write(sha256, skey, 32);
+        memmove(skey, gcry_md_read(sha256, 0), 32);
     }
+    gcry_md_close(sha256);
 }
 
 void sha256_block32(const uint8_t *in, uint8_t *out)
 {
-    CryptoPP::SHA256 sha256;
-    sha256.CalculateDigest(out, in, 32);
+    gcry_md_hd_t hd;
+    gcry_error_t gerr;
+    gerr = gcry_md_open(&hd, GCRY_MD_SHA256, GCRY_MD_FLAG_SECURE);
+    if (gerr != GPG_ERR_NO_ERROR)
+        gcrypt_fatal(gerr);
+    gcry_md_write(hd, in, 32);
+    gcry_md_final(hd);
+    memmove(out, gcry_md_read(hd, 0), 32);
+    gcry_md_close(hd);
 }
 
 void extract_random_key(const uint8_t *stretchkey,
                         const uint8_t *fst, const uint8_t *snd,
                         uint8_t *randkey)
 {
-    using namespace CryptoPP;
-    ECB_Mode< Twofish >::Decryption ctx;
-    ctx.SetKey(stretchkey, SHA256::DIGESTSIZE);
-    ctx.ProcessData(randkey, fst, 16);
-    ctx.ProcessData(randkey + 16, snd, 16);
+    gcry_error_t gerr;
+    gcry_cipher_hd_t hd;
+    gerr = gcry_cipher_open(&hd, GCRY_CIPHER_TWOFISH,
+                            GCRY_CIPHER_MODE_ECB, GCRY_CIPHER_SECURE);
+    if (gerr != GPG_ERR_NO_ERROR)
+        gcrypt_fatal(gerr);
+    gerr = gcry_cipher_setkey(hd, stretchkey, 32);
+    if (gerr != GPG_ERR_NO_ERROR)
+        gcrypt_fatal(gerr);
+    gcry_cipher_decrypt(hd, randkey, 16, fst, 16);
+    gcry_cipher_reset(hd);
+    gcry_cipher_decrypt(hd, randkey + 16, 16, snd, 16);
+    gcry_cipher_close(hd);
 }
 
 void print_time(uint8_t *val)
@@ -76,9 +95,8 @@ void print_time(uint8_t *val)
 void printhex(FILE *f, uint8_t *ptr, unsigned cnt)
 {
     unsigned i;
-    for (i = 0; i < cnt; i++) {
+    for (i = 0; i < cnt; i++)
         fwprintf(f, L"%02x", *ptr++);
-    }
 }
 
 void print_uuid(uint8_t *uuid)
@@ -145,11 +163,45 @@ void db_print(FILE *f, struct field *fld)
     }
 }
 
-int init_decrypt_ctx(psafe::Decrypt* ctx, psafe3_pro* pro, safe_sec* sec)
+int init_decrypt_ctx(struct decrypt_ctx *ctx, struct psafe3_pro *pro,
+                     struct safe_sec *sec)
 {
-    ctx->decrypt.SetKeyWithIV(sec->rand_k, 32, pro->iv, 16);
-    ctx->hmac.SetKey(sec->rand_l, 32);
+    gcry_error_t gerr;
+
+    assert(ctx != NULL);
+    assert(pro != NULL);
+    assert(sec != NULL);
+
+    gerr = gcry_cipher_open(&ctx->cipher, GCRY_CIPHER_TWOFISH,
+                            GCRY_CIPHER_MODE_CBC, GCRY_CIPHER_SECURE);
+    if (gerr != GPG_ERR_NO_ERROR) goto err_cipher;
+
+    ctx->gerr = gcry_cipher_setkey(ctx->cipher, sec->rand_k, 32);
+    if (gerr != GPG_ERR_NO_ERROR) goto err_cipher;
+
+    ctx->gerr = gcry_cipher_setiv(ctx->cipher, pro->iv, 16);
+    if (gerr != GPG_ERR_NO_ERROR) goto err_cipher;
+
+    gerr = gcry_md_open(&ctx->hmac, GCRY_MD_SHA256,
+                        GCRY_MD_FLAG_SECURE|GCRY_MD_FLAG_HMAC);
+    if (gerr != GPG_ERR_NO_ERROR) goto err_hmac;
+
+    gerr = gcry_md_setkey(ctx->hmac, sec->rand_l, 32);
+    if (gerr != GPG_ERR_NO_ERROR) goto err_hmac;
+
     return 0;
+
+err_hmac:
+    gcry_cipher_close(ctx->cipher);
+err_cipher:
+    ctx->gerr = gerr;
+    return -1;
+}
+
+void term_decrypt_ctx(struct decrypt_ctx *ctx)
+{
+    gcry_cipher_close(ctx->cipher);
+    gcry_md_close(ctx->hmac);
 }
 
 void print_prologue(FILE *f, struct psafe3_pro *pro)
@@ -183,17 +235,15 @@ void * map_header(struct field **hdr, size_t *hdr_fcnt, uint8_t *raw, size_t raw
     for (ptr = raw, fcnt = 0; ptr < raw + rawsize; ptr += TWOF_BLKSIZE) {
         fld = (struct field *) ptr;
         fcnt++;
-        if (fld->type == 0xff) {
+        if (fld->type == 0xff)
             break;
-        }
     }
 
     *hdr = reinterpret_cast<field*>(new field*[fcnt]);
     for (ptr = raw, i = 0; ptr < raw + rawsize; ptr += TWOF_BLKSIZE) {
         hdr[i++] = (struct field *) ptr;
-        if (fld->type == 0xff) {
+        if (fld->type == 0xff)
             break;
-        }
     }
     *hdr_fcnt = fcnt;
 
@@ -206,12 +256,27 @@ int stretch_and_check_pass(const char *pass, size_t passlen,
     stretch_key(pass, passlen, pro->salt, pro->iter, sec->pprime);
     uint8_t hkey[32];
     sha256_block32(sec->pprime, hkey);
-    if (memcmp(pro->h_pprime, hkey, 32) != 0) {
+    if (memcmp(pro->h_pprime, hkey, 32) != 0)
         return -1;
-    }
     extract_random_key(sec->pprime, pro->b[0], pro->b[1], sec->rand_k);
     extract_random_key(sec->pprime, pro->b[2], pro->b[3], sec->rand_l);
     return 0;
+}
+
+void init_crypto(size_t secmem_pool_size)
+{
+    gcry_error_t gerr;
+    if (!gcry_check_version(GCRYPT_VERSION)) {
+        fputws(L"Fatal libgcrypt version mismatch.\n", stdout);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Create a pool of secure memory. */
+    gcry_control(GCRYCTL_SUSPEND_SECMEM_WARN);
+    gerr = gcry_control(GCRYCTL_INIT_SECMEM, secmem_pool_size, 0);
+    if (gerr != GPG_ERR_NO_ERROR)
+        gcrypt_fatal(gerr);
+    gcry_control(GCRYCTL_RESUME_SECMEM_WARN);
 }
 
 int main(int argc, char **argv)
@@ -224,20 +289,21 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+    init_crypto(64*1024);
+
     size_t sz;
     uint8_t *ptr;
     ptr = reinterpret_cast<uint8_t *>(mapfile_ro(argv[1], &sz));
-    if (ptr == NULL) {
+    if (ptr == NULL)
         err(1, "%s", argv[1]);
-    }
 
     struct psafe3_pro *pro;
     pro = (struct psafe3_pro *)(ptr + 4);
-    CryptoPP::SecBlock<safe_sec> safeSecMem(1);
     struct safe_sec *sec;
-    sec = reinterpret_cast<safe_sec *>(safeSecMem.BytePtr());
+    sec = reinterpret_cast<safe_sec *>(gcry_malloc_secure(sizeof(*sec)));
     ret = stretch_and_check_pass(argv[2], strlen(argv[2]), pro, sec);
     if (ret != 0) {
+        gcry_free(sec);
         wprintf(L"Invalid password.\n");
         exit(1);
     }
@@ -247,15 +313,13 @@ int main(int argc, char **argv)
     safe_size = sz - (4 + sizeof(*pro) + 48);
     assert(safe_size > 0);
     assert(safe_size % TWOF_BLKSIZE == 0);
-    CryptoPP::SecBlock<byte> safeMem(safe_size);
-    safe = safeMem.BytePtr();
+    safe = reinterpret_cast<uint8_t *>(gcry_malloc_secure(safe_size));
     assert(safe != NULL);
 
-    psafe::Decrypt ctx;
-    if (init_decrypt_ctx(&ctx, pro, sec) < 0) {
-        std::cerr << "Failed to init decryption context.\n";
-        exit(1);
-    }
+    gcry_error_t gerr;
+    struct decrypt_ctx ctx;
+    if (init_decrypt_ctx(&ctx, pro, sec) < 0)
+        gcrypt_fatal(ctx.gerr);
 
     size_t bcnt;
     bcnt = safe_size / TWOF_BLKSIZE;
@@ -265,7 +329,9 @@ int main(int argc, char **argv)
     encp = ptr + 4 + sizeof(*pro);
     safep = safe;
     while (bcnt--) {
-        ctx.decrypt.ProcessData(safep, encp, TWOF_BLKSIZE);
+        gerr = gcry_cipher_decrypt(ctx.cipher, safep, TWOF_BLKSIZE, encp, TWOF_BLKSIZE);
+        if (gerr != GPG_ERR_NO_ERROR)
+            gcrypt_fatal(gerr);
         safep += TWOF_BLKSIZE;
         encp += TWOF_BLKSIZE;
     }
@@ -277,20 +343,15 @@ int main(int argc, char **argv)
         struct field *fld;
         fld = (struct field *)safep;
         wprintf(L"len=%-3u  type=%02x  ", fld->len, fld->type);
-        if (state == DB) {
+        if (state == DB)
             db_print(stdout, fld);
-        } else {
+        else
             hd_print(stdout, fld);
-        }
-        if (fld->type == 0xff) {
+        if (fld->type == 0xff)
             state = DB;
-        }
         putwc('\n', stdout);
-
-        if (fld->len) {
-            ctx.hmac.Update(safep + sizeof(*fld), fld->len);
-        }
-
+        if (fld->len)
+            gcry_md_write(ctx.hmac, safep + sizeof(*fld), fld->len);
         safep += ((fld->len + 5 + 15) / TWOF_BLKSIZE) * TWOF_BLKSIZE;
     }
 
@@ -306,10 +367,11 @@ int main(int argc, char **argv)
     printhex(stdout, pro->h_pprime, 32);
     EOL();
 
-    byte hmac_digest[32];
-    ctx.hmac.Final(hmac_digest);
+    gcry_md_final(ctx.hmac);
     wprintf(L"HMAC'  ");
-    printhex(stdout, hmac_digest, 32);
+    uint8_t hmac[32];
+    memmove(hmac, gcry_md_read(ctx.hmac, GCRY_MD_SHA256), 32);
+    printhex(stdout, hmac, 32);
     EOL();
 
     wprintf(L"HMAC   ");
@@ -317,7 +379,10 @@ int main(int argc, char **argv)
     EOL();
 #undef EOL
 
+    gcry_free(safe);
+    gcry_free(sec);
     unmapfile(ptr, sz);
+    term_decrypt_ctx(&ctx);
 
     exit(0);
 }
