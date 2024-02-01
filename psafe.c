@@ -117,12 +117,13 @@ void pws(FILE *f, uint8_t *bp, size_t len)
 {
     mbstate_t state;
     memset(&state, 0, sizeof(state));
-    wchar_t *tmp = new wchar_t[len + 1];
+    wchar_t *tmp;
+    tmp = malloc((len + 1) * sizeof(wchar_t));
     size_t n;
     const char *ptr = (const char *)bp;
     n = mbsrtowcs(tmp, &ptr, len, &state);
     tmp[n] = L'\0';
-    fputws(tmp, f);
+    fputws(tmp, stdout);
     free(tmp);
 }
 
@@ -239,7 +240,7 @@ void * map_header(struct field **hdr, size_t *hdr_fcnt, uint8_t *raw, size_t raw
             break;
     }
 
-    *hdr = reinterpret_cast<field*>(new field*[fcnt]);
+    *hdr = malloc(sizeof(struct field *) * fcnt);
     for (ptr = raw, i = 0; ptr < raw + rawsize; ptr += TWOF_BLKSIZE) {
         hdr[i++] = (struct field *) ptr;
         if (fld->type == 0xff)
@@ -293,14 +294,14 @@ int main(int argc, char **argv)
 
     size_t sz;
     uint8_t *ptr;
-    ptr = reinterpret_cast<uint8_t *>(mapfile_ro(argv[1], &sz));
+    ptr = mapfile_ro(argv[1], &sz);
     if (ptr == NULL)
         err(1, "%s", argv[1]);
 
     struct psafe3_pro *pro;
     pro = (struct psafe3_pro *)(ptr + 4);
     struct safe_sec *sec;
-    sec = reinterpret_cast<safe_sec *>(gcry_malloc_secure(sizeof(*sec)));
+    sec = gcry_malloc_secure(sizeof(*sec));
     ret = stretch_and_check_pass(argv[2], strlen(argv[2]), pro, sec);
     if (ret != 0) {
         gcry_free(sec);
@@ -313,7 +314,7 @@ int main(int argc, char **argv)
     safe_size = sz - (4 + sizeof(*pro) + 48);
     assert(safe_size > 0);
     assert(safe_size % TWOF_BLKSIZE == 0);
-    safe = reinterpret_cast<uint8_t *>(gcry_malloc_secure(safe_size));
+    safe = gcry_malloc_secure(safe_size);
     assert(safe != NULL);
 
     gcry_error_t gerr;
