@@ -1,5 +1,5 @@
 [requires]
-cryptopp/8.7.0
+cryptopp/8.6.0
 
 [generators]
 cmake

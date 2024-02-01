@@ -16,6 +16,6 @@ ensure_exists $psafe_safe;
 
 log=log.profile.$$
 
-valgrind --log-file=$log --tool=callgrind --dump-instr=yes --simulate-cache=yes --collect-jumps=yes $psafe_bin $psafe_safe "$psafe_pass"
+valgrind --tool=callgrind --dump-instr=yes --simulate-cache=yes --collect-jumps=yes $psafe_bin $psafe_safe "$psafe_pass"
 
 echo $log
