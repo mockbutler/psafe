@@ -14,8 +14,9 @@
 #include <unistd.h>
 #include <wchar.h>
 
-#include "mapfile.h"
+#include "io_port.h"
 #include "psafe.h"
+#include "util.h"
 
 #define TWOF_BLKSIZE 16		/* Twofish cipher block size bytes. */
 #define SHA256_SIZE 32		/* SHA-256 size in bytes. */
@@ -85,7 +86,7 @@ void print_time(uint8_t *val)
 {
     struct tm *lt;
     time_t time;
-    time = val[0] | val[1] << 8 | val[2] << 16 | val[3] << 24;
+    time = load_le32(val);
     lt = gmtime(&time);
     wprintf(L"%d-%d-%d %02d:%02d:%02d",
             1900 + lt->tm_year, lt->tm_mon, lt->tm_mday,
@@ -164,7 +165,7 @@ void db_print(FILE *f, struct field *fld)
     }
 }
 
-int init_decrypt_ctx(struct decrypt_ctx *ctx, struct psafe3_pro *pro,
+int init_decrypt_ctx(struct crypto_ctx *ctx, struct psafe3_pro *pro,
                      struct safe_sec *sec)
 {
     gcry_error_t gerr;
@@ -199,7 +200,7 @@ err_cipher:
     return -1;
 }
 
-void term_decrypt_ctx(struct decrypt_ctx *ctx)
+void term_decrypt_ctx(struct crypto_ctx *ctx)
 {
     gcry_cipher_close(ctx->cipher);
     gcry_md_close(ctx->hmac);
@@ -286,20 +287,23 @@ int main(int argc, char **argv)
     setlocale(LC_ALL, "");
 
     if (argc != 3) {
-        wprintf(L"Usage: psafe file.psafe3 passphrase");
+        wprintf(L"Usage: psafe file.psafe3 passphrase\n");
         exit(EXIT_FAILURE);
     }
 
     init_crypto(64*1024);
 
-    size_t sz;
-    uint8_t *ptr;
-    ptr = mapfile_ro(argv[1], &sz);
-    if (ptr == NULL)
+    struct io_port *safe_io = NULL;
+    if (io_port_mmap_open(argv[1], &safe_io) != 0) {
         err(1, "%s", argv[1]);
+    }
 
+    struct io_port_mmap *mmio = (void *)safe_io;
+    uint8_t *ptr = mmio->mem;
+    size_t sz = mmio->mem_size;
     struct psafe3_pro *pro;
     pro = (struct psafe3_pro *)(ptr + 4);
+
     struct safe_sec *sec;
     sec = gcry_malloc_secure(sizeof(*sec));
     ret = stretch_and_check_pass(argv[2], strlen(argv[2]), pro, sec);
@@ -318,7 +322,7 @@ int main(int argc, char **argv)
     assert(safe != NULL);
 
     gcry_error_t gerr;
-    struct decrypt_ctx ctx;
+    struct crypto_ctx ctx;
     if (init_decrypt_ctx(&ctx, pro, sec) < 0)
         gcrypt_fatal(ctx.gerr);
 
@@ -382,7 +386,8 @@ int main(int argc, char **argv)
 
     gcry_free(safe);
     gcry_free(sec);
-    unmapfile(ptr, sz);
+
+    safe_io->close(safe_io);
     term_decrypt_ctx(&ctx);
 
     exit(0);
