@@ -1,9 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
 project(psafe)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBGCRYPT REQUIRED libgcrypt)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -std=c99")
+
+enable_testing()
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wextra -std=c11")
+
 include_directories(${LIBGCRYPT_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR})
-add_executable(psafe psafe.c psafe.h io_port.c io_port.h util.c util.h)
+
+add_executable(psafe 
+    psafe.c psafe.h
+    ioport.c ioport.h
+    util.c util.h
+    pws3.c pws3.h)
 target_link_libraries(psafe ${LIBGCRYPT_LDFLAGS})
 target_compile_options(psafe PUBLIC ${LIBGCRYPT_CFLAGS_OTHER})
+
+add_subdirectory(test)

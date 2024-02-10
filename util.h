@@ -8,22 +8,32 @@
 
 /**
  * Load Little Endian 32 bit integer from memory location.
+ * Memory is not required to be 4 byte aligned.
  */
 static inline uint32_t load_le32(void *mem)
 {
     uint8_t *p = mem;
-    return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+    uint64_t val = p[0];
+    val = val + (p[1] << UINT64_C(8));
+    val = val + (p[2] << UINT64_C(16));
+    val = val + (p[3] << UINT64_C(24));
+    return val;
 }
 
-#define strify(lno) #lno
+
+#define STRIFY(txt) #txt
+
 
 #define crash() \
     crash_helper(__FILE__, __LINE__, __func__)
 
+
 #define crash_helper(path, line, func) \
-    crash_actual(path ":" strify(line) " ", func)
+    crash_actual(path ":" STRIFY(line) " ", func)
+
 
 void crash_actual(const char *path, const char *func);
+
 
 void util_close_fd(int fd);
 
