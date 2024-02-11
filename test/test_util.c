@@ -8,8 +8,8 @@ int main(int argc, char **argv)
 {
     uint32_t v;
 
-    assert(argc == 1);
-    assert(argv[0] != NULL);
+    (void)argc;
+    (void)argv;
 
     static const uint8_t testv1[] = { 1, 0, 0, 0 };
     v = load_le32((void *)testv1);
