@@ -15,20 +15,12 @@
 #include <unistd.h>
 #include <wchar.h>
 
+#include "crypto.h"
 #include "ioport.h"
-#include "psafe.h"
 #include "pws3.h"
 #include "util.h"
 
-#define TWOF_BLKSIZE 16 /* Twofish cipher block size bytes. */
-#define SHA256_SIZE 32 /* SHA-256 size in bytes. */
-
-void gcrypt_fatal(gcry_error_t err)
-{
-    fwprintf(stderr, L"gcrypt error %s/%s\n", gcry_strsource(err),
-        gcry_strerror(err));
-    exit(EXIT_FAILURE);
-}
+#include "psafe.h"
 
 void stretch_key(const char* pass,
     size_t passlen,
@@ -237,33 +229,6 @@ void print_prologue(FILE* f, struct psafe3_header* pro)
 #undef EOL
 }
 
-void* map_header(struct field** hdr,
-    size_t* hdr_fcnt,
-    uint8_t* raw,
-    size_t rawsize)
-{
-    uint8_t* ptr;
-    size_t i, fcnt;
-    struct field* fld;
-
-    for (ptr = raw, fcnt = 0; ptr < raw + rawsize; ptr += TWOF_BLKSIZE) {
-        fld = (struct field*)ptr;
-        fcnt++;
-        if (fld->type == 0xff)
-            break;
-    }
-
-    *hdr = malloc(sizeof(struct field*) * fcnt);
-    for (ptr = raw, i = 0; ptr < raw + rawsize; ptr += TWOF_BLKSIZE) {
-        hdr[i++] = (struct field*)ptr;
-        if (fld->type == 0xff)
-            break;
-    }
-    *hdr_fcnt = fcnt;
-
-    return fld + TWOF_BLKSIZE;
-}
-
 int stretch_and_check_pass(const char* pass,
     size_t passlen,
     struct psafe3_header* pro,
@@ -279,22 +244,6 @@ int stretch_and_check_pass(const char* pass,
     return 0;
 }
 
-void init_crypto(size_t secmem_pool_size)
-{
-    gcry_error_t gerr;
-    if (!gcry_check_version(GCRYPT_VERSION)) {
-        fputws(L"Fatal libgcrypt version mismatch.\n", stdout);
-        exit(EXIT_FAILURE);
-    }
-
-    /* Create a pool of secure memory. */
-    gcry_control(GCRYCTL_SUSPEND_SECMEM_WARN);
-    gerr = gcry_control(GCRYCTL_INIT_SECMEM, secmem_pool_size, 0);
-    if (gerr != GPG_ERR_NO_ERROR)
-        gcrypt_fatal(gerr);
-    gcry_control(GCRYCTL_RESUME_SECMEM_WARN);
-}
-
 int main(int argc, char** argv)
 {
     int ret;
@@ -305,7 +254,7 @@ int main(int argc, char** argv)
         exit(EXIT_FAILURE);
     }
 
-    init_crypto(64 * 1024);
+    crypto_init(64 * 1024);
 
     struct ioport* safe_io = NULL;
     if (ioport_mmap_open(argv[1], &safe_io) != 0) {
@@ -334,7 +283,7 @@ int main(int argc, char** argv)
     size_t safe_size;
     safe_size = sz - (4 + sizeof(hdr) + 48);
     assert(safe_size > 0);
-    assert(safe_size % TWOF_BLKSIZE == 0);
+    assert(safe_size % TWOFISH_SIZE == 0);
     safe = gcry_malloc_secure(safe_size);
     assert(safe != NULL);
 
@@ -344,19 +293,19 @@ int main(int argc, char** argv)
         gcrypt_fatal(ctx.gerr);
 
     size_t bcnt;
-    bcnt = safe_size / TWOF_BLKSIZE;
+    bcnt = safe_size / TWOFISH_SIZE;
     assert(bcnt > 0);
     uint8_t* encp;
     uint8_t* safep;
     encp = ptr + 4 + sizeof(hdr);
     safep = safe;
     while (bcnt-- && !safe_io->drained(safe_io)) {
-        gerr = gcry_cipher_decrypt(ctx.cipher, safep, TWOF_BLKSIZE, encp,
-            TWOF_BLKSIZE);
+        gerr = gcry_cipher_decrypt(ctx.cipher, safep, TWOFISH_SIZE, encp,
+            TWOFISH_SIZE);
         if (gerr != GPG_ERR_NO_ERROR)
             gcrypt_fatal(gerr);
-        safep += TWOF_BLKSIZE;
-        encp += TWOF_BLKSIZE;
+        safep += TWOFISH_SIZE;
+        encp += TWOFISH_SIZE;
     }
 
     enum { HDR,
@@ -376,10 +325,10 @@ int main(int argc, char** argv)
         putwc('\n', stdout);
         if (fld->len)
             gcry_md_write(ctx.hmac, safep + sizeof(*fld), fld->len);
-        safep += ((fld->len + 5 + 15) / TWOF_BLKSIZE) * TWOF_BLKSIZE;
+        safep += ((fld->len + 5 + 15) / TWOFISH_SIZE) * TWOFISH_SIZE;
     }
 
-    assert(memcmp(ptr + (sz - 48), "PWS3-EOFPWS3-EOF", TWOF_BLKSIZE) == 0);
+    assert(memcmp(ptr + (sz - 48), "PWS3-EOFPWS3-EOF", TWOFISH_SIZE) == 0);
 
 #define EOL() putwc('\n', stdout)
     EOL();
@@ -409,5 +358,6 @@ int main(int argc, char** argv)
     safe_io->close(safe_io);
     term_decrypt_ctx(&ctx);
 
+    crypto_term();
     exit(0);
 }

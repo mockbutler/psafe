@@ -10,11 +10,13 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wextra -std=c11")
 
 include_directories(${LIBGCRYPT_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR})
 
-add_executable(psafe 
-    psafe.c psafe.h
+add_executable(psafe
+    crypto.c crypto.h
     ioport.c ioport.h
+    psafe.c psafe.h
+    pws3.c pws3.h
     util.c util.h
-    pws3.c pws3.h)
+    )
 target_link_libraries(psafe ${LIBGCRYPT_LDFLAGS})
 target_compile_options(psafe PUBLIC ${LIBGCRYPT_CFLAGS_OTHER})
 
