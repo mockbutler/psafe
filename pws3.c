@@ -1,6 +1,7 @@
 #include <string.h>
 
-#include "ioport.h"
+#include <util/ioport.h>
+
 #include "pws3.h"
 
 int pws3_read_header(struct ioport* port, struct psafe3_header* hdr)

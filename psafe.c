@@ -15,10 +15,11 @@
 #include <unistd.h>
 #include <wchar.h>
 
+#include <util/ioport.h>
+#include <util/util.h>
+
 #include "crypto.h"
-#include "ioport.h"
 #include "pws3.h"
-#include "util.h"
 
 #include "psafe.h"
 

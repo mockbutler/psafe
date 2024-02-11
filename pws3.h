@@ -1,10 +1,6 @@
 #ifndef PWS3_H
 #define PWS3_H
 
-#include <stdint.h>
-
-#include "ioport.h"
-
 /* The format defines the header as being the first set of records, so
  * call this the prologue.
  */
