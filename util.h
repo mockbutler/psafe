@@ -14,7 +14,7 @@
 static inline uint32_t load_le32(void* mem)
 {
     uint8_t* p = mem;
-    uint64_t val = p[0];
+    uint32_t val = p[0];
     val = val + (p[1] << UINT64_C(8));
     val = val + (p[2] << UINT64_C(16));
     val = val + (p[3] << UINT64_C(24));

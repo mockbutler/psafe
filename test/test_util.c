@@ -13,11 +13,11 @@ int main(int argc, char **argv)
 
     static const uint8_t testv1[] = { 1, 0, 0, 0 };
     v = load_le32((void *)testv1);
-    assert(v == 1);
+    if (v != 1) crash();
 
     static const uint8_t testv2[] = { 254, 255, 255, 255 };
     v = load_le32((void *)testv2);
-    assert(v == UINT32_MAX - 1);
+    if (v != UINT32_MAX - 1) crash();
 
     return 0;
 }
