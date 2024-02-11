@@ -1,8 +1,9 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <stdint.h>
-#include <wchar.h>
+typedef uint8_t u8;
+typedef uint32_t u32;
+typedef uint64_t u64;
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
@@ -33,6 +34,6 @@ void crash_actual(const char* path, const char* func);
 
 void util_close_fd(int fd);
 
-int mkwstr(const char *str, wchar_t *wstr_out);
+int read_from_terminal(const char *prompt, char *buf, size_t *bufsize);
 
 #endif

@@ -12,9 +12,9 @@ struct ioport {
 
 struct ioport_mmap {
     struct ioport port;
-    void* mem;
-    size_t mem_size;
-    size_t pos;
+    void*         mem;
+    size_t        mem_size;
+    size_t        pos;
 };
 
 int ioport_mmap_open(const char* path, struct ioport** port);

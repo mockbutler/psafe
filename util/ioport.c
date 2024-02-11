@@ -20,7 +20,7 @@ static int _mmap_read(struct ioport* port, void* buf, const size_t len, size_t* 
     if (ctx->pos >= ctx->mem_size) {
         return 0;
     }
-    size_t rdamt = MIN(ctx->mem_size - ctx->pos, len);
+    size_t    rdamt = MIN(ctx->mem_size - ctx->pos, len);
     uintptr_t loc = (uintptr_t)ctx->mem + ctx->pos;
     memmove(buf, (void*)loc, rdamt);
     ctx->pos += len;
@@ -99,7 +99,7 @@ close_on_err:
  */
 int ioport_read_exactly(struct ioport* port, void* buf, const size_t len)
 {
-    int ret;
+    int    ret;
     size_t rdamt;
 
     rdamt = 0;
@@ -117,7 +117,7 @@ int ioport_read_le32(struct ioport* port, uint32_t* val)
     assert(port != NULL && val != NULL);
 
     size_t rdamt;
-    char buf[4];
+    char   buf[4];
     if (IO_PORT_READ(port, buf, sizeof(buf), &rdamt) != 0 || rdamt != sizeof(buf)) {
         return -1;
     }

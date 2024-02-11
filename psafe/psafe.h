@@ -16,8 +16,8 @@
 /* Field header. */
 struct field {
     uint32_t len;
-    uint8_t type;
-    uint8_t val[];
+    uint8_t  type;
+    uint8_t  val[];
 } __attribute__((packed));
 
 /* Secure safe information. */
@@ -29,9 +29,9 @@ struct safe_sec {
 
 /** Cryptographic context */
 struct crypto_ctx {
-    gcry_error_t gerr;
+    gcry_error_t     gerr;
     gcry_cipher_hd_t cipher;
-    gcry_md_hd_t hmac;
+    gcry_md_hd_t     hmac;
 };
 
 #endif

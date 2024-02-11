@@ -1,9 +1,11 @@
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <wchar.h>
+#include <termios.h>
 
 #include "util.h"
 
@@ -32,23 +34,25 @@ call_again:
     }
 }
 
-int mkwstr(const char *str, wchar_t *wstr_out)
+int read_from_terminal(const char *prompt, char *buf, size_t *bufsize)
 {
-    size_t len;
-    const char *ccp;
-    wchar_t *wcp;
+    assert(prompt && buf && bufsize);
+    struct termios t;
 
-    len = strlen(str);
-    if (len == 0)
-        return -1;
+    puts(prompt);
+    fflush(stdout);
 
-    wstr_out = calloc(len + 1, sizeof(wchar_t));
-    if (wstr_out == NULL) 
-        return -1;
+    tcgetattr(STDIN_FILENO, &t);
+    t.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
 
-    for (ccp = str, wcp = wstr_out; *ccp != '\0'; ccp++, wcp++) {
-        *wcp = btowc(*ccp);
-    }
-    *wcp = L'\0';
+    fgets(buf, *bufsize, stdin);
+    size_t len = strlen(buf);
+    buf[len - 1] = 0;
+
+    tcgetattr(STDIN_FILENO, &t);
+    t.c_lflag |= ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+
     return 0;
 }

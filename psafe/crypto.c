@@ -24,7 +24,7 @@ void crypto_init(size_t secmem_pool_size)
         gcrypt_fatal(gerr);
     gcry_control(GCRYCTL_RESUME_SECMEM_WARN);
 
-    gcry_control (GCRYCTL_INITIALIZATION_FINISHED, 0);
+    gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
 }
 
 void crypto_term(void)
