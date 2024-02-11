@@ -7,6 +7,12 @@
 #include <gcrypt.h>
 #include <stdint.h>
 
+/* Twofish cipher block size bytes. */
+#define TWOFISH_SIZE 16
+
+/* SHA-256 size in bytes. */
+#define SHA256_SIZE 32
+
 /* Field header. */
 struct field {
     uint32_t len;
