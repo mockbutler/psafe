@@ -1,4 +1,8 @@
+#include <stdint.h>
 #include <string.h>
+#include <unistd.h>
+
+#include <util/util.h>
 
 #include <util/ioport.h>
 

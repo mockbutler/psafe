@@ -15,16 +15,16 @@
 
 /* Field header. */
 struct field {
-    uint32_t len;
-    uint8_t  type;
-    uint8_t  val[];
+    u32 len;
+    u8  type;
+    u8  val[];
 } __attribute__((packed));
 
 /* Secure safe information. */
 struct safe_sec {
-    uint8_t pprime[32];
-    uint8_t rand_k[32];
-    uint8_t rand_l[32];
+    u8 pprime[32];
+    u8 rand_k[32];
+    u8 rand_l[32];
 };
 
 /** Cryptographic context */

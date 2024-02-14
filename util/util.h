@@ -1,7 +1,7 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-typedef uint8_t u8;
+typedef uint8_t  u8;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
@@ -12,10 +12,10 @@ typedef uint64_t u64;
  * Load Little Endian 32 bit integer from memory location.
  * Memory is not required to be 4 byte aligned.
  */
-static inline uint32_t load_le32(void* mem)
+static inline u32 load_le32(void* mem)
 {
     uint8_t* p = mem;
-    uint32_t val = p[0];
+    u32      val = p[0];
     val = val + (p[1] << UINT64_C(8));
     val = val + (p[2] << UINT64_C(16));
     val = val + (p[3] << UINT64_C(24));
@@ -34,6 +34,6 @@ void crash_actual(const char* path, const char* func);
 
 void util_close_fd(int fd);
 
-int read_from_terminal(const char *prompt, char *buf, size_t *bufsize);
+int read_from_terminal(const char* prompt, char* buf, size_t* bufsize);
 
 #endif

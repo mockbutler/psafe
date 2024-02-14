@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 #include <wchar.h>
-#include <termios.h>
 
 #include "util.h"
 
@@ -34,7 +34,7 @@ call_again:
     }
 }
 
-int read_from_terminal(const char *prompt, char *buf, size_t *bufsize)
+int read_from_terminal(const char* prompt, char* buf, size_t* bufsize)
 {
     assert(prompt && buf && bufsize);
     struct termios t;

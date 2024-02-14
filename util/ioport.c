@@ -112,7 +112,7 @@ int ioport_read_exactly(struct ioport* port, void* buf, const size_t len)
 /**
  * Read little endian 32 bit integer.
  */
-int ioport_read_le32(struct ioport* port, uint32_t* val)
+int ioport_read_le32(struct ioport* port, u32* val)
 {
     assert(port != NULL && val != NULL);
 
