@@ -1,11 +1,11 @@
-/* Copyright 2013-2024 Marc Butler <mockbutler@gmail.com>
- * All Rights Reserved
- */
+/* Copyright 2013-present Marc Butler <mockbutler@gmail.com> */
 #ifndef PSAFE_H
 #define PSAFE_H
 
+#include <util/basictypes.h>
+
 #include <gcrypt.h>
-#include <stdint.h>
+
 
 /* Twofish cipher block size bytes. */
 #define TWOFISH_SIZE 16

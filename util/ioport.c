@@ -1,3 +1,5 @@
+/* Copyright 2024-present Marc Butler <moockbutler@gmail.com> */
+
 #include <assert.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -94,7 +96,7 @@ close_on_err:
     return -1;
 }
 
-/**
+/*
  * Read exact number of bytes from the port.
  */
 int ioport_read_exactly(struct ioport* port, void* buf, const size_t len)
@@ -109,7 +111,7 @@ int ioport_read_exactly(struct ioport* port, void* buf, const size_t len)
     return ret;
 }
 
-/**
+/*
  * Read little endian 32 bit integer.
  */
 int ioport_read_le32(struct ioport* port, u32* val)

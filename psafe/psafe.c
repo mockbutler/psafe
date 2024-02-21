@@ -1,6 +1,4 @@
-/* Copyright 2013-2024 Marc Butler <mockbutler@gmail.com>
- * All Rights Reserved
- */
+/* Copyright 2013-present Marc Butler <moockbutler@gmail.com> */
 
 #include <assert.h>
 #include <err.h>
@@ -15,6 +13,7 @@
 #include <unistd.h>
 #include <wchar.h>
 
+#include <util/basictypes.h>
 #include <util/util.h>
 
 #include <util/ioport.h>
@@ -222,7 +221,7 @@ void print_prologue(FILE* f, struct psafe3_header* pro)
     fputws(L"SALT   ", f);
     printhex(f, pro->salt, 32);
     EOL();
-    fwprintf(f, L"ITER   %u\n", pro->iter);
+    fwprintf(f, L"ITER   %" PRIu32 L"\n", pro->iter);
     fputws(L"H(P')  ", f);
     printhex(f, pro->h_pprime, 32);
     EOL();
@@ -255,18 +254,23 @@ int stretch_and_check_pass(const char* pass,
 int main(int argc, char** argv)
 {
     int ret;
+    char   pass[100];
     setlocale(LC_ALL, "");
 
-    if (argc != 2) {
+    if (argc != 2 && argc != 3) {
         wprintf(L"Usage: psafe file.psafe3\n");
         exit(EXIT_FAILURE);
     }
 
-    crypto_init(64 * 1024);
+    if (argc == 3) {
+        strcpy(pass, argv[2]);
+    } else {
+        size_t passmax = sizeof(pass);
+        read_from_terminal("Password: ", pass, &passmax);
 
-    char   pass[100];
-    size_t passmax = sizeof(pass);
-    read_from_terminal("Password: ", pass, &passmax);
+    }
+
+    crypto_init(64 * 1024);
 
     struct ioport* safe_io = NULL;
     if (ioport_mmap_open(argv[1], &safe_io) != 0) {

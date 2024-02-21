@@ -1,9 +1,7 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-typedef uint8_t  u8;
-typedef uint32_t u32;
-typedef uint64_t u64;
+#include "basictypes.h"
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
@@ -14,11 +12,11 @@ typedef uint64_t u64;
  */
 static inline u32 load_le32(void* mem)
 {
-    uint8_t* p = mem;
-    u32      val = p[0];
-    val = val + (p[1] << UINT64_C(8));
-    val = val + (p[2] << UINT64_C(16));
-    val = val + (p[3] << UINT64_C(24));
+    u8* p = mem;
+    u32 val = p[0];
+    val = val + (p[1] << UINT32_C(8));
+    val = val + (p[2] << UINT32_C(16));
+    val = val + (p[3] << UINT32_C(24));
     return val;
 }
 
