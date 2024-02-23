@@ -266,8 +266,10 @@ int main(int argc, char** argv)
         strcpy(pass, argv[2]);
     } else {
         size_t passmax = sizeof(pass);
-        read_from_terminal("Password: ", pass, &passmax);
-
+        if (read_from_terminal("Password: ", pass, &passmax) != 0) {
+            wprintf(L"No password read.");
+            exit(EXIT_FAILURE);
+        }
     }
 
     crypto_init(64 * 1024);

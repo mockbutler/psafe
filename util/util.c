@@ -46,7 +46,10 @@ int read_from_terminal(const char* prompt, char* buf, size_t* bufsize)
     t.c_lflag &= ~ECHO;
     tcsetattr(STDIN_FILENO, TCSANOW, &t);
 
-    fgets(buf, *bufsize, stdin);
+    memset(buf, 0, *bufsize);
+    if (fgets(buf, *bufsize, stdin) == NULL) {
+        return -1;
+    }
     size_t len = strlen(buf);
     buf[len - 1] = 0;
 
