@@ -2,6 +2,8 @@
 #define _BASICTYPES_H
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 typedef uint8_t u8;
 #define U8C(x) UINT8_C(x)

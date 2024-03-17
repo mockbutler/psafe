@@ -14,10 +14,6 @@ Requires
  * [CMake][cmake]
  * [GCrypt Library][libgcrypt]
 
-Setup
-
-`cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug -G Ninja -B build`
-
 [pwsafe]: http://pwsafe.org/
 [cmake]: http://www.cmake.org/
 [libgcrypt]: http://www.gnu.org/software/libgcrypt/

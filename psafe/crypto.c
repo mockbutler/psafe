@@ -5,7 +5,7 @@
 void gcrypt_fatal(gcry_error_t err)
 {
     fwprintf(stderr, L"gcrypt error %s/%s\n", gcry_strsource(err),
-        gcry_strerror(err));
+             gcry_strerror(err));
     exit(EXIT_FAILURE);
 }
 
