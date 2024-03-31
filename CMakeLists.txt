@@ -11,5 +11,4 @@ add_compile_options(-Wall -Wextra -Werror)
 
 include_directories(${LIBGCRYPT_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR})
 
-add_subdirectory(util)
-add_subdirectory(psafe)
+add_subdirectory(src)

@@ -1,5 +1,4 @@
-#ifndef _BASICTYPES_H
-#define _BASICTYPES_H
+#pragma once
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -13,5 +12,3 @@ typedef uint32_t u32;
 
 typedef uint64_t u64;
 #define U64C(x) UINT64_C(x)
-
-#endif

@@ -13,15 +13,13 @@
 #include <unistd.h>
 #include <wchar.h>
 
-#include <util/basictypes.h>
-#include <util/util.h>
-
-#include <util/ioport.h>
-
+#include "basictypes.h"
 #include "crypto.h"
-#include "pws3.h"
-
+#include "ioport.h"
 #include "psafe.h"
+#include "pws3.h"
+#include "util.h"
+
 
 void stretch_key(const char* pass,
                  size_t passlen,

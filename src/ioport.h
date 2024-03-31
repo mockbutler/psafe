@@ -1,7 +1,6 @@
-#ifndef IOPORT_H
-#define IOPORT_H
+#pragma once
 
-#include <util/basictypes.h>
+#include "basictypes.h"
 
 struct ioport {
     int (*read)(struct ioport *port, void *buf, const size_t len, size_t *actual);
@@ -39,5 +38,3 @@ int ioport_str_open(char *str, size_t cap, enum ioport_str_opts opts);
 
 #define IOPORT_READ(port, buf, len, p_actual) \
 	((port)->read(port, buf, len, p_actual))
-
-#endif

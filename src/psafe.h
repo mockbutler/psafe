@@ -1,8 +1,5 @@
 /* Copyright 2013-present Marc Butler <mockbutler@gmail.com> */
-#ifndef PSAFE_H
-#define PSAFE_H
-
-#include <util/basictypes.h>
+#include "basictypes.h"
 
 #include <gcrypt.h>
 
@@ -33,5 +30,3 @@ struct crypto_ctx {
     gcry_cipher_hd_t cipher;
     gcry_md_hd_t     hmac;
 };
-
-#endif
