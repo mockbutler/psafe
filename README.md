@@ -1,9 +1,8 @@
 psafe
 =====
+![Build Status](https://github.com/mockbutler/psafe/actions/workflows/meson-single-platform.yml/badge.svg)
 
-![CMake on Single Platform](https://github.com/mockbutler/psafe/actions/workflows/cmake-single-platform.yml/badge.svg)
-
-Comand line utility for dumpinging the contents of [Password Safe][pwsafe] database on Mac and Linux.
+Command line utility for dumpinging the contents of [Password Safe][pwsafe] database on Mac and Linux.
 
 Building
 --------
