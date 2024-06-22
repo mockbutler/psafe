@@ -1,4 +1,8 @@
 #pragma once
+/* Copyright 2013-present Marc Butler <moockbutler@gmail.com> */
+
+#include <stdlib.h>
+#include <sys/types.h>
 
 typedef struct ioport {
     int (*read)(struct ioport *port, void *buf, const size_t len,
@@ -28,9 +32,4 @@ struct ioport_str {
     size_t pos;     /* cursor position : bytes */
 };
 
-enum ioport_str_opts { IOPORT_STR_CLEAR = 0, IOPORT_STR_ };
-
-int ioport_str_open(char *str, size_t cap, enum ioport_str_opts opts);
-
-#define IOPORT_READ(port, buf, len, p_actual)                                  \
-    ((port)->read(port, buf, len, p_actual))
+#define IOPORT_READ(port, buf, len, p_actual) ((port)->read(port, buf, len, p_actual))

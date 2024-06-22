@@ -6,7 +6,7 @@
 
 int main(int argc, char **argv)
 {
-    u32 v;
+    uint32_t v;
 
     (void)argc;
     (void)argv;
