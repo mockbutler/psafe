@@ -1,0 +1,4 @@
+AlignConsecutiveDeclarations: true
+BreakBeforeBraces: Linux
+IndentCaseLabels: false
+IndentWidth: 4

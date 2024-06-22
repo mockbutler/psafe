@@ -9,7 +9,7 @@
 
 #include "util.h"
 
-void crash_actual(const char* path, const char* func)
+void crash_actual(const char *path, const char *func)
 {
     fputws(L"CRASH ", stderr);
     fputs(path, stderr);
@@ -34,7 +34,7 @@ call_again:
     }
 }
 
-int read_from_terminal(const char* prompt, char* buf, size_t* bufsize)
+int read_from_terminal(const char *prompt, char *buf, size_t *bufsize)
 {
     assert(prompt && buf && bufsize);
     struct termios t;

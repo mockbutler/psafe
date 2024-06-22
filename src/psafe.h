@@ -1,8 +1,7 @@
+#pragma once
 /* Copyright 2013-present Marc Butler <mockbutler@gmail.com> */
-#include "basictypes.h"
 
 #include <gcrypt.h>
-
 
 /* Twofish cipher block size bytes. */
 #define TWOFISH_SIZE 16
@@ -12,16 +11,16 @@
 
 /* Field header. */
 struct field {
-    u32 len;
-    u8  type;
-    u8  val[];
+    uint32_t len;
+    uint8_t  type;
+    uint8_t  val[];
 } __attribute__((packed));
 
 /* Secure safe information. */
 struct safe_sec {
-    u8 pprime[32];
-    u8 rand_k[32];
-    u8 rand_l[32];
+    uint8_t pprime[32];
+    uint8_t rand_k[32];
+    uint8_t rand_l[32];
 };
 
 /** Cryptographic context */

@@ -12,30 +12,30 @@
 
 #include "ioport.h"
 
-static int _mmap_read(struct ioport* port, void* buf, const size_t len, size_t* actual)
+static int _mmap_read(IOPort *port, void *buf, const size_t len, size_t *actual)
 {
     assert(port != NULL && buf != NULL && actual != NULL);
 
-    struct ioport_mmap* ctx;
-    ctx = (void*)port;
+    struct ioport_mmap *ctx;
+    ctx = (void *)port;
 
     if (ctx->pos >= ctx->mem_size) {
         return 0;
     }
     size_t    rdamt = MIN(ctx->mem_size - ctx->pos, len);
     uintptr_t loc = (uintptr_t)ctx->mem + ctx->pos;
-    memmove(buf, (void*)loc, rdamt);
+    memmove(buf, (void *)loc, rdamt);
     ctx->pos += len;
     *actual = rdamt;
     return 0;
 }
 
-static int _mmap_close(struct ioport* port)
+static int _mmap_close(IOPort *port)
 {
     assert(port != NULL);
 
-    struct ioport_mmap* ctx;
-    ctx = (void*)port;
+    struct ioport_mmap *ctx;
+    ctx = (void *)port;
 
     int ret = munmap(ctx->mem, ctx->mem_size);
     if (ret == 0) {
@@ -46,14 +46,14 @@ static int _mmap_close(struct ioport* port)
     return ret;
 }
 
-static int _mmap_can_read(struct ioport* port)
+static int _mmap_can_read(IOPort *port)
 {
     assert(port != NULL);
-    struct ioport_mmap* ctx = (void*)port;
+    struct ioport_mmap *ctx = (void *)port;
     return ctx->pos < ctx->mem_size;
 }
 
-int ioport_mmap_open(const char* path, struct ioport** port)
+int ioport_mmap_open(const char *path, IOPort **port)
 {
     assert(path != NULL && port != NULL);
 
@@ -67,14 +67,15 @@ int ioport_mmap_open(const char* path, struct ioport** port)
         goto close_on_err;
     }
 
-    void* memptr;
-    memptr = mmap(NULL, nfo.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    void *memptr;
+    memptr =
+        mmap(NULL, nfo.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     if (memptr == MAP_FAILED) {
         goto close_on_err;
     }
 
-    struct ioport_mmap* mmp;
-    if (posix_memalign((void**)&mmp, sizeof(void*), sizeof(*mmp)) != 0) {
+    struct ioport_mmap *mmp;
+    if (posix_memalign((void **)&mmp, sizeof(void *), sizeof(*mmp)) != 0) {
         goto close_on_err;
     }
 
@@ -92,15 +93,14 @@ close_on_err:
         int errtmp = errno;
         util_close_fd(fd);
         errno = errtmp;
-    }
-    while (0);
+    } while (0);
     return -1;
 }
 
 /*
  * Read exact number of bytes from the port.
  */
-int ioport_read_exactly(struct ioport* port, void* buf, const size_t len)
+int ioport_read_exactly(IOPort *port, void *buf, const size_t len)
 {
     int    ret;
     size_t rdamt;
@@ -112,16 +112,17 @@ int ioport_read_exactly(struct ioport* port, void* buf, const size_t len)
     return ret;
 }
 
-int ioport_read_le32(struct ioport* port, u32* val)
+int ioport_read_le32(IOPort *port, uint32_t *val)
 {
     /*
-    * Read little endian 32 bit integer.
-    */
+     * Read little endian 32 bit integer.
+     */
     assert(port != NULL && val != NULL);
 
     size_t rdamt;
     char   buf[4];
-    if (IOPORT_READ(port, buf, sizeof(buf), &rdamt) != 0 || rdamt != sizeof(buf)) {
+    if (IOPORT_READ(port, buf, sizeof(buf), &rdamt) != 0 ||
+        rdamt != sizeof(buf)) {
         return -1;
     }
     *val = load_le32(buf);

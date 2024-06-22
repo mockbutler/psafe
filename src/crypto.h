@@ -1,5 +1,4 @@
-#ifndef CRYPTO_H
-#define CRYPTO_H
+#pragma once
 
 #include <gcrypt.h>
 
@@ -8,5 +7,3 @@ void gcrypt_fatal(gcry_error_t err);
 
 void crypto_init(size_t secmem_pool_size);
 void crypto_term(void);
-
-#endif
