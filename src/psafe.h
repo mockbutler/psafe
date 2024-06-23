@@ -3,11 +3,6 @@
 
 #include <gcrypt.h>
 
-/* Twofish cipher block size bytes. */
-#define TWOFISH_SIZE 16
-
-/* SHA-256 size in bytes. */
-#define SHA256_SIZE 32
 
 /* Field header. */
 struct field {
@@ -23,7 +18,7 @@ struct safe_sec {
     uint8_t rand_l[32];
 };
 
-/** Cryptographic context */
+/* Cryptographic context */
 struct crypto_ctx {
     gcry_error_t     gerr;
     gcry_cipher_hd_t cipher;

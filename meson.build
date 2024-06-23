@@ -1,4 +1,5 @@
-project('psafe', 'c', default_options: ['c_std=c17'])
+project('psafe', 'c', default_options: ['warning_level=2', 'c_std=c17'])
 
-# hello world
+libgcryptdep = dependency('libgcrypt')
+
 subdir('src')
